@@ -161,6 +161,65 @@ Le router est configuré dans **`src/app/app.routes.ts`** (définition des route
 ### 4. Élément HTML d'ancrage
 L'élément HTML servant de point d'ancrage est **`<app-root>`** dans **`src/index.html`**. Il correspond au sélecteur défini dans le composant `App`.
 
+## Analyse du partage de state (TP8)
+
+### Système d'upgrades
+
+Le Shop permet d'acheter des upgrades qui augmentent le revenu passif du jeu :
+- **6 upgrades** : Dev Junior, Dev Senior, Serveur Cloud, Marketing, CTO, Data Center
+- **Coût croissant** : `currentCost = round(baseCost * (1.15 ^ count))`
+- **Validation** : Bouton désactivé si fonds insuffisants
+- **Composant** : `UpgradeCard` pour la réutilisabilité (props + events)
+
+### Problème : State fragmenté et incohérent
+
+#### 1. Où vivent `money` et `incomePerSecond` ?
+
+Actuellement, ces données vivent **dans deux endroits différents** :
+- Dans **`GamePage`** : `money = signal(0)` et `incomePerSecond = signal(0)`
+- Dans **`ShopPage`** : `money = signal(0)` et `incomePerSecond = signal(0)`
+
+Ces deux copies sont **complètement indépendantes** et ne se synchronisent jamais.
+
+#### 2. Shop et Game ont-ils besoin des mêmes données ?
+
+**Oui, absolument.** Les deux pages dépendent des mêmes informations :
+- **Game** : Affiche l'argent et le génère (clic + tick), affiche l'income/sec
+- **Shop** : Affiche l'argent, le dépense, modifie l'income/sec via les upgrades
+
+Ces données représentent **l'état central du jeu** et doivent être partagées.
+
+#### 3. Comment avez-vous fait pour partager ces données sans store global ?
+
+**Réponse honnête : Je ne les ai pas partagées.**
+
+Chaque page gère sa propre copie locale. Conséquences :
+- Si on gagne 100$ dans Game et qu'on va au Shop → le Shop affiche 0$
+- Si on achète un upgrade dans Shop (income +5$/sec) et qu'on retourne à Game → Game affiche toujours 0$/sec
+- Les upgrades achetées dans Shop ne persistent pas
+- Le joueur "perd" son argent à chaque changement de page
+
+**Solution actuelle :** Bouton de test "+100$" dans Shop pour simuler de l'argent, mais c'est une béquille temporaire.
+
+#### 4. Qu'est-ce qui devient fragile dans votre solution actuelle ?
+
+**Tout.** Cette architecture est cassée par design :
+
+- ❌ **Incohérence des données** : Deux sources de vérité pour les mêmes informations
+- ❌ **Perte de données** : Changement de page = reset du state
+- ❌ **Impossibilité de synchronisation** : Pas de mécanisme pour propager les changements
+- ❌ **Duplication de logique** : Chaque page doit implémenter sa propre gestion de l'argent
+- ❌ **Tests difficiles** : Impossible de tester le flow complet (Game → Shop → Game)
+- ❌ **Mauvaise UX** : Le jeu ne fonctionne pas comme attendu
+
+### Conclusion : Le besoin d'un state global
+
+Cette implémentation démontre concrètement **pourquoi un state global est nécessaire** :
+
+> Sans store centralisé, il est impossible de maintenir une cohérence entre les pages qui partagent des données. L'argent et le revenu passif doivent vivre dans un endroit unique accessible par toutes les pages.
+
+**Prochaine étape** : Implémenter un service de state global (ou utiliser un store comme NgRx/Akita) pour résoudre ces problèmes architecturaux.
+
 ## Développement
 
 Ce projet a été généré avec Angular CLI version 21.2.7.
