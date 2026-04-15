@@ -45,7 +45,17 @@ import { Upgrade } from '../models/upgrade.model';
               </div>
             </div>
 
-            <button class="buy-btn" (click)="buyUpgrade(upgrade)">
+            @if (!canBuy(upgrade)) {
+              <div class="insufficient-funds">
+                💰 Fonds insuffisants
+              </div>
+            }
+
+            <button 
+              class="buy-btn" 
+              [disabled]="!canBuy(upgrade)"
+              (click)="buyUpgrade(upgrade)"
+            >
               Acheter
             </button>
           </div>
@@ -196,6 +206,18 @@ import { Upgrade } from '../models/upgrade.model';
       color: #007bff;
     }
 
+    .insufficient-funds {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      color: #856404;
+      padding: 0.5rem;
+      border-radius: 6px;
+      text-align: center;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+
     .buy-btn {
       width: 100%;
       padding: 0.75rem;
@@ -209,14 +231,21 @@ import { Upgrade } from '../models/upgrade.model';
       transition: all 0.3s;
     }
 
-    .buy-btn:hover {
+    .buy-btn:hover:not(:disabled) {
       background: #218838;
       transform: translateY(-2px);
       box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
     }
 
-    .buy-btn:active {
+    .buy-btn:active:not(:disabled) {
       transform: translateY(0);
+    }
+
+    .buy-btn:disabled {
+      background: #6c757d;
+      color: #adb5bd;
+      cursor: not-allowed;
+      opacity: 0.6;
     }
 
     .test-controls {
@@ -259,6 +288,10 @@ export class ShopPage {
 
   getCurrentCost(upgrade: Upgrade): number {
     return Math.round(upgrade.baseCost * Math.pow(1.15, upgrade.count));
+  }
+
+  canBuy(upgrade: Upgrade): boolean {
+    return this.money() >= this.getCurrentCost(upgrade);
   }
 
   buyUpgrade(upgrade: Upgrade): void {
