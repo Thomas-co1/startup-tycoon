@@ -8,7 +8,7 @@ import { ClickButton } from '../components/click-button.component';
   imports: [GameHeader, ClickButton],
   template: `
     <div class="page-container">
-      <app-game-header [money]="money()" />
+      <app-game-header [money]="money()" [incomePerSecond]="incomePerSecond()" />
       
       <div class="game-content">
         <app-click-button 
@@ -36,6 +36,7 @@ import { ClickButton } from '../components/click-button.component';
 export class GamePage {
   money = signal(0);
   clickValue = signal(1);
+  incomePerSecond = signal(0);
 
   handleClick(): void {
     this.money.update(current => current + this.clickValue());

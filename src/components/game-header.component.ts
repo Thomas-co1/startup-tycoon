@@ -11,8 +11,8 @@ import { MoneyDisplay } from './moneyDisplay.component';
       <div class="stats-container">
         <app-money-display [money]="money" />
         <div class="income-placeholder">
-          <span class="label">Income:</span>
-          <span class="value">$0/s</span>
+          <span class="label">Income/sec:</span>
+          <span class="value">\${{ incomePerSecond }}/s</span>
         </div>
       </div>
     </header>
@@ -78,4 +78,5 @@ import { MoneyDisplay } from './moneyDisplay.component';
 })
 export class GameHeader {
   @Input() money!: number;
+  @Input() incomePerSecond!: number;
 }
