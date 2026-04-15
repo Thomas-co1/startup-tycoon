@@ -113,6 +113,32 @@ Fonction pure de formatage des grands nombres.
 
 **Isolation** : Logique métier séparée, réutilisable, testable.
 
+## Gestion du tick et Event Loop (TP7)
+
+### Revenu passif (income per second)
+
+Le jeu implémente un système de revenu passif avec un tick toutes les secondes :
+- **State** : `incomePerSecond = signal(0)` dans `GamePage`
+- **Interval** : Créé dans `ngOnInit()` avec `window.setInterval(() => {...}, 1000)`
+- **Nettoyage** : Détruit dans `ngOnDestroy()` avec `clearInterval(this.intervalId)`
+
+### Pourquoi nettoyer l'interval ?
+
+**Sans nettoyage** : À chaque recréation du composant (changement de route, refresh), un nouvel interval serait créé **sans supprimer l'ancien**. Résultat : multiplication des ticks → accélération du temps (2x, 3x, etc.).
+
+**Avec nettoyage** : L'interval est correctement détruit quand le composant est démonté, garantissant un seul tick par seconde.
+
+### Flow de l'Event Loop
+
+1. **`setInterval(callback, 1000)`** → Enregistré dans les **Web APIs** du navigateur
+2. Toutes les 1000ms, la Web API envoie `callback` dans la **Task Queue** (Macrotask)
+3. L'**Event Loop** vérifie si le **Call Stack** est vide
+4. Si vide, il déplace `callback` de la Task Queue vers le Call Stack
+5. Le code du callback s'exécute (mise à jour de `money` via signal)
+6. Angular détecte le changement et met à jour le DOM
+
+Ce mécanisme garantit que les ticks ne bloquent jamais le thread principal et s'exécutent de manière asynchrone.
+
 ## Routes
 
 - `/` → Page Game (clicker principal)
