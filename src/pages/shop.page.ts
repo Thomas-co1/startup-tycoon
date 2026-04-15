@@ -1,7 +1,7 @@
-import { Component, signal } from '@angular/core';
-import { UPGRADES } from '../data/upgrades.data';
+import { Component, inject } from '@angular/core';
 import { Upgrade } from '../models/upgrade.model';
 import { UpgradeCard } from '../components/upgrade-card.component';
+import { GameStateService } from '../services/game-state.service';
 
 @Component({
   selector: 'app-shop',
@@ -17,21 +17,21 @@ import { UpgradeCard } from '../components/upgrade-card.component';
         <div class="player-stats">
           <div class="stat-item">
             <span class="stat-label">Argent</span>
-            <span class="stat-value money">{{ money() }}$</span>
+            <span class="stat-value money">{{ gameState.money() }}$</span>
           </div>
           <div class="stat-item">
             <span class="stat-label">Revenu</span>
-            <span class="stat-value income">{{ incomePerSecond() }}$/sec</span>
+            <span class="stat-value income">{{ gameState.incomePerSecond() }}$/sec</span>
           </div>
         </div>
       </div>
 
       <div class="upgrades-grid">
-        @for (upgrade of upgrades(); track upgrade.id) {
+        @for (upgrade of gameState.upgrades(); track upgrade.id) {
           <app-upgrade-card
             [upgrade]="upgrade"
-            [currentCost]="getCurrentCost(upgrade)"
-            [canBuy]="canBuy(upgrade)"
+            [currentCost]="gameState.getCurrentCost(upgrade)"
+            [canBuy]="gameState.canBuyUpgrade(upgrade)"
             (onBuy)="buyUpgrade($event)"
           />
         }
@@ -143,42 +143,19 @@ import { UpgradeCard } from '../components/upgrade-card.component';
   `]
 })
 export class ShopPage {
-  upgrades = signal<Upgrade[]>(UPGRADES.map(u => ({ ...u })));
-  money = signal(0);
-  incomePerSecond = signal(0);
-
-  getCurrentCost(upgrade: Upgrade): number {
-    return Math.round(upgrade.baseCost * Math.pow(1.15, upgrade.count));
-  }
-
-  canBuy(upgrade: Upgrade): boolean {
-    return this.money() >= this.getCurrentCost(upgrade);
-  }
+  gameState = inject(GameStateService);
 
   buyUpgrade(upgrade: Upgrade): void {
-    const currentCost = this.getCurrentCost(upgrade);
+    const currentCost = this.gameState.getCurrentCost(upgrade);
     
-    // Vérifier si le joueur a assez d'argent
-    if (this.money() >= currentCost) {
-      // Déduire le coût
-      this.money.update(current => current - currentCost);
-      
-      // Augmenter le count de l'upgrade
-      upgrade.count += 1;
-      
-      // Augmenter le revenu passif
-      this.incomePerSecond.update(current => current + upgrade.incomePerSecondGain);
-      
-      // Mettre à jour le signal pour déclencher le re-render
-      this.upgrades.update(upgrades => [...upgrades]);
-      
-      console.log(`✅ Acheté: ${upgrade.name} (Count: ${upgrade.count}, Income: ${this.incomePerSecond()}$/sec)`);
+    if (this.gameState.buyUpgrade(upgrade, currentCost)) {
+      console.log(`✅ Acheté: ${upgrade.name} (Count: ${upgrade.count}, Income: ${this.gameState.incomePerSecond()}$/sec)`);
     } else {
-      console.log(`❌ Fonds insuffisants pour ${upgrade.name}. Coût: ${currentCost}$, Disponible: ${this.money()}$`);
+      console.log(`❌ Fonds insuffisants pour ${upgrade.name}. Coût: ${currentCost}$, Disponible: ${this.gameState.money()}$`);
     }
   }
 
   addTestMoney(): void {
-    this.money.update(current => current + 100);
+    this.gameState.addMoney(100);
   }
 }

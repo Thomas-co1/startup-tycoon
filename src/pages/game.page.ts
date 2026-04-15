@@ -1,6 +1,7 @@
-import { Component, signal, OnInit, OnDestroy } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { GameHeader } from '../components/game-header.component';
 import { ClickButton } from '../components/click-button.component';
+import { GameStateService } from '../services/game-state.service';
 
 @Component({
   selector: 'app-game',
@@ -8,11 +9,11 @@ import { ClickButton } from '../components/click-button.component';
   imports: [GameHeader, ClickButton],
   template: `
     <div class="page-container">
-      <app-game-header [money]="money()" [incomePerSecond]="incomePerSecond()" />
+      <app-game-header [money]="gameState.money()" [incomePerSecond]="gameState.incomePerSecond()" />
       
       <div class="game-content">
         <app-click-button 
-          [clickValue]="clickValue()" 
+          [clickValue]="gameState.clickValue()" 
           (onClick)="handleClick()"
         />
       </div>
@@ -89,37 +90,18 @@ import { ClickButton } from '../components/click-button.component';
     }
   `]
 })
-export class GamePage implements OnInit, OnDestroy {
-  money = signal(0);
-  clickValue = signal(1);
-  incomePerSecond = signal(0);
-
-  private intervalId?: number;
-
-  ngOnInit(): void {
-    this.intervalId = window.setInterval(() => {
-      const income = this.incomePerSecond();
-      this.money.update(current => current + income);
-      // Log temporaire de vérification (Partie 5 TP7)
-      console.log(`[TICK] ${new Date().toLocaleTimeString()} - Argent gagné: ${income}€`);
-    }, 1000);
-  }
-
-  ngOnDestroy(): void {
-    if (this.intervalId !== undefined) {
-      clearInterval(this.intervalId);
-    }
-  }
+export class GamePage {
+  gameState = inject(GameStateService);
 
   handleClick(): void {
-    this.money.update(current => current + this.clickValue());
+    this.gameState.addMoney(this.gameState.clickValue());
   }
 
   increaseIncome(): void {
-    this.incomePerSecond.update(current => current + 1);
+    this.gameState.addIncomePerSecond(1);
   }
 
   resetIncome(): void {
-    this.incomePerSecond.set(0);
+    this.gameState.incomePerSecond.set(0);
   }
 }
