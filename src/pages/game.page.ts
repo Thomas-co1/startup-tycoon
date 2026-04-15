@@ -98,7 +98,10 @@ export class GamePage implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.intervalId = window.setInterval(() => {
-      this.money.update(current => current + this.incomePerSecond());
+      const income = this.incomePerSecond();
+      this.money.update(current => current + income);
+      // Log temporaire de vérification (Partie 5 TP7)
+      console.log(`[TICK] ${new Date().toLocaleTimeString()} - Argent gagné: ${income}€`);
     }, 1000);
   }
 
