@@ -45,6 +45,74 @@ Gère le state global de l'application (sera implémenté dans les prochaines pa
 ### `src/styles`
 Contient les styles globaux partagés par toute l'application.
 
+### `src/utils`
+Fonctions utilitaires réutilisables (formatage de nombres, etc.).
+
+## Architecture du clicker (TP6)
+
+### Composants créés
+
+#### `MoneyDisplay` (`src/components/moneyDisplay.component.ts`)
+Composant d'affichage pur qui affiche l'argent du joueur.
+- **Props** : `money` (number) - Montant à afficher
+- **Responsabilité** : Affichage uniquement, pas de logique métier
+- **Bonus** : Utilise `formatNumber()` pour un affichage compact (999 → "999", 1200 → "1.2K", 1250000 → "1.25M")
+
+#### `ClickButton` (`src/components/click-button.component.ts`)
+Bouton interactif principal du jeu.
+- **Props** : `clickValue` (number) - Valeur ajoutée par clic
+- **Events** : `onClick` (EventEmitter) - Émis à chaque clic
+- **Responsabilité** : UI + notification, ne modifie pas directement le state
+
+#### `GameHeader` (`src/components/game-header.component.ts`)
+En-tête du jeu regroupant les statistiques.
+- **Props** : `money` (number) - Argent à afficher
+- **Composition** : Utilise `MoneyDisplay` et prépare un placeholder pour l'income
+- **Responsabilité** : Organisation visuelle, pas de logique
+
+### State et flux de données
+
+#### Localisation du state
+Le state est **localisé uniquement dans `src/pages/game.page.ts`** :
+- `money = signal(0)` - Argent actuel du joueur
+- `clickValue = signal(1)` - Valeur générée par clic
+
+**Pas de store global** - Le state reste dans la page Game conformément aux contraintes du TP.
+
+#### Flux de données
+
+**Props (descendent)** : Parent → Enfants
+```
+GamePage
+  ├→ GameHeader [money]
+  │   └→ MoneyDisplay [money]
+  └→ ClickButton [clickValue]
+```
+
+**Events (remontent)** : Enfants → Parent
+```
+ClickButton (onClick)
+  → GamePage.handleClick()
+    → money.update(...)
+```
+
+#### Gestion de l'événement clic
+1. L'utilisateur clique sur `ClickButton`
+2. Le composant émet l'événement `onClick`
+3. `GamePage` écoute et exécute `handleClick()`
+4. Le signal `money` est mis à jour : `money.update(current => current + clickValue())`
+5. Angular détecte le changement et met à jour l'affichage automatiquement
+
+### Utilitaires
+
+#### `formatNumber` (`src/utils/formatNumber.ts`)
+Fonction pure de formatage des grands nombres.
+- `999` → `"999"`
+- `1200` → `"1.2K"`
+- `1250000` → `"1.25M"`
+
+**Isolation** : Logique métier séparée, réutilisable, testable.
+
 ## Routes
 
 - `/` → Page Game (clicker principal)
