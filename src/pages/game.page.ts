@@ -16,6 +16,14 @@ import { ClickButton } from '../components/click-button.component';
           (onClick)="handleClick()"
         />
       </div>
+
+      <div class="test-controls">
+        <h3>🔧 Contrôles de test (temporaire)</h3>
+        <div class="buttons">
+          <button class="test-btn" (click)="increaseIncome()">+1 income/sec</button>
+          <button class="test-btn reset" (click)="resetIncome()">Reset income/sec</button>
+        </div>
+      </div>
     </div>
   `,
   styles: [`
@@ -30,6 +38,54 @@ import { ClickButton } from '../components/click-button.component';
       justify-content: center;
       align-items: center;
       min-height: 400px;
+    }
+
+    .test-controls {
+      margin-top: 3rem;
+      padding: 1.5rem;
+      background: #f8f9fa;
+      border: 2px dashed #dee2e6;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .test-controls h3 {
+      margin: 0 0 1rem 0;
+      color: #6c757d;
+      font-size: 1.1rem;
+    }
+
+    .test-controls .buttons {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+    }
+
+    .test-btn {
+      padding: 0.75rem 1.5rem;
+      border: 2px solid #007bff;
+      background: white;
+      color: #007bff;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .test-btn:hover {
+      background: #007bff;
+      color: white;
+    }
+
+    .test-btn.reset {
+      border-color: #dc3545;
+      color: #dc3545;
+    }
+
+    .test-btn.reset:hover {
+      background: #dc3545;
+      color: white;
     }
   `]
 })
@@ -54,5 +110,13 @@ export class GamePage implements OnInit, OnDestroy {
 
   handleClick(): void {
     this.money.update(current => current + this.clickValue());
+  }
+
+  increaseIncome(): void {
+    this.incomePerSecond.update(current => current + 1);
+  }
+
+  resetIncome(): void {
+    this.incomePerSecond.set(0);
   }
 }
