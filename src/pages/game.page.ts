@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core';
+import { Component, signal, OnInit, OnDestroy } from '@angular/core';
 import { GameHeader } from '../components/game-header.component';
 import { ClickButton } from '../components/click-button.component';
 
@@ -33,10 +33,24 @@ import { ClickButton } from '../components/click-button.component';
     }
   `]
 })
-export class GamePage {
+export class GamePage implements OnInit, OnDestroy {
   money = signal(0);
   clickValue = signal(1);
   incomePerSecond = signal(0);
+
+  private intervalId?: number;
+
+  ngOnInit(): void {
+    this.intervalId = window.setInterval(() => {
+      this.money.update(current => current + this.incomePerSecond());
+    }, 1000);
+  }
+
+  ngOnDestroy(): void {
+    if (this.intervalId !== undefined) {
+      clearInterval(this.intervalId);
+    }
+  }
 
   handleClick(): void {
     this.money.update(current => current + this.clickValue());
