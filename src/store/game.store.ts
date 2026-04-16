@@ -1,8 +1,8 @@
-import { Injectable, signal, computed, effect } from '@angular/core';
+import { Injectable, signal, computed, effect, inject } from '@angular/core';
 import { GameState, initialState } from '../state/game.state';
 import { GameAction, GameActions } from '../state/game.actions';
 import { gameReducer } from '../state/game.reducer';
-import { loadGameData, saveGameData } from '../utils/localStorage';
+import { StorageService } from '../services/storage.service';
 
 /**
  * Store global du jeu - point central de gestion de l'état
@@ -11,6 +11,8 @@ import { loadGameData, saveGameData } from '../utils/localStorage';
   providedIn: 'root',
 })
 export class GameStore {
+  private storageService = inject(StorageService);
+
   // Signal writable contenant tout l'état du jeu
   private state = signal<GameState>(this.loadInitialState());
 
@@ -28,10 +30,7 @@ export class GameStore {
     // Sauvegarder automatiquement à chaque changement d'état
     effect(() => {
       const currentState = this.state();
-      saveGameData('gameState', currentState);
-      // Note: Dans un environnement de développement, ce log peut être utile
-      // mais sera commenté en production pour éviter les side effects
-      // console.log('State saved:', currentState);
+      this.storageService.saveGame(currentState);
     });
 
     // Tick global : s'exécute toutes les secondes
@@ -44,7 +43,15 @@ export class GameStore {
    * Charge l'état initial depuis localStorage ou retourne initialState
    */
   private loadInitialState(): GameState {
-    return loadGameData<GameState>('gameState', initialState);
+    const savedState = this.storageService.loadGame();
+    
+    if (savedState) {
+      console.log('[GameStore] État restauré depuis la sauvegarde');
+      return savedState;
+    }
+    
+    console.log('[GameStore] Démarrage avec l\'état initial');
+    return initialState;
   }
 
   /**
