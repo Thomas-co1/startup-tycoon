@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { Component, Input, Output, EventEmitter, DoCheck } from '@angular/core';
 import { Upgrade } from '../models/upgrade.model';
 
 @Component({
@@ -155,11 +155,19 @@ import { Upgrade } from '../models/upgrade.model';
     }
   `]
 })
-export class UpgradeCard {
+export class UpgradeCard implements DoCheck {
   @Input({ required: true }) upgrade!: Upgrade;
   @Input({ required: true }) currentCost!: number;
   @Input({ required: true }) canBuy!: boolean;
   @Output() onBuy = new EventEmitter<Upgrade>();
+
+  private renderCount = 0;
+
+  // 🔍 TP11 Partie 2: Instrumentation re-renders
+  ngDoCheck(): void {
+    this.renderCount++;
+    console.log(`[UPGRADE-CARD] ${this.upgrade?.name || '?'} - Re-render #${this.renderCount}`);
+  }
 
   handleBuy(): void {
     if (this.canBuy) {

@@ -28,14 +28,18 @@
 
 ---
 
-### Performance Tab - Page Shop (5-10 sec)
+### Performance Tab - Page Shop (9.75 sec)
 
 **Observations** :
-- Long tasks : 
-- Scripting time : 
-- Rendering time : 
+- Scripting time : 27 ms
+- Rendering time : 6 ms
+- Painting time : 5 ms
+- System time : 120 ms
+- **Total** : 9,746 ms
 
-**Screenshot** : `screenshots/performance-shop-before.png`
+**Notes** : Pas de Long Tasks détectées (>50ms), performances globalement bonnes sur cette durée.
+
+**Screenshot** : `shop-perf-record.png`
 
 ---
 

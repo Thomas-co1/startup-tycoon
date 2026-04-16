@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, DoCheck } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { GameStore } from '../store/game.store';
 import { formatNumber } from '../utils/formatNumber';
@@ -109,12 +109,19 @@ import { formatNumber } from '../utils/formatNumber';
     }
   `]
 })
-export class NavbarComponent {
+export class NavbarComponent implements DoCheck {
   private store = inject(GameStore);
+  private renderCount = 0;
 
   money = this.store.money;
   incomePerSecond = this.store.incomePerSecond;
 
   // Exposer formatNumber au template
   formatNumber = formatNumber;
+
+  // 🔍 TP11 Partie 2: Instrumentation re-renders
+  ngDoCheck(): void {
+    this.renderCount++;
+    console.log(`[NAVBAR] Re-render #${this.renderCount}`);
+  }
 }
