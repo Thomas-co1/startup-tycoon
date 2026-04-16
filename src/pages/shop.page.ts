@@ -1,4 +1,4 @@
-import { Component, inject, DoCheck } from '@angular/core';
+import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
 import { Upgrade } from '../models/upgrade.model';
 import { UpgradeCard } from '../components/upgrade-card.component';
 import { GameStore } from '../store/game.store';
@@ -8,6 +8,7 @@ import { GameActions } from '../state/game.actions';
   selector: 'app-shop',
   standalone: true,
   imports: [UpgradeCard],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page-container">
       <div class="shop-header">
@@ -143,20 +144,13 @@ import { GameActions } from '../state/game.actions';
     }
   `]
 })
-export class ShopPage implements DoCheck {
+export class ShopPage {
   private store = inject(GameStore);
-  private renderCount = 0;
 
   // Signals du store
   money = this.store.money;
   incomePerSecond = this.store.incomePerSecond;
   upgrades = this.store.upgrades;
-
-  // 🔍 TP11 Partie 2: Instrumentation re-renders
-  ngDoCheck(): void {
-    this.renderCount++;
-    console.log(`[SHOP-PAGE] Re-render #${this.renderCount}`);
-  }
 
   getCurrentCost(upgrade: Upgrade): number {
     return Math.round(upgrade.baseCost * Math.pow(1.15, upgrade.count));

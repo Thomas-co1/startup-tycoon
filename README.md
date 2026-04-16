@@ -909,6 +909,145 @@ store.resetGame() → dispatch(RESET_GAME)
 ✅ **UX soignée** : Settings avec affichage "Last saved" + Reset confirmé  
 ✅ **Maintenabilité** : Service dédié, séparation des responsabilités  
 
+---
+
+## TP11 — Performance & Optimisation
+
+### Objectif
+
+Mesurer, analyser et optimiser les performances de l'application en utilisant des outils modernes (Lighthouse, Performance Tab) et des techniques d'optimisation Angular (OnPush, debounce, lazy loading).
+
+### Partie 1 : Mesures baseline (AVANT optimisation)
+
+**Lighthouse - Page Game** :
+- Performance : 84/100
+- FCP : 1.3s, LCP : 2.2s, TBT : 20ms
+
+**Lighthouse - Page Shop** :
+- Performance : 82/100
+- FCP : 1.3s, LCP : 2.3s, TBT : 70ms ⚠️ (3.5× plus élevé que Game)
+
+**Performance Tab (9.75s sur Shop)** :
+- Scripting : 27ms, Rendering : 6ms
+- Pas de Long Tasks détectées
+
+**Conclusion** : Performances correctes, mais TBT plus élevé sur Shop → indique des re-renders fréquents.
+
+### Partie 2 : Instrumentation des re-renders
+
+**Problème identifié** :
+- À chaque **tick** (1 seconde), tous les composants re-render :
+  - 1× ShopPage
+  - 1× Navbar
+  - 6× UpgradeCard (CTO, Marketing, Data Center, Dev Junior, Dev Senior, Serveur Cloud)
+- **Total** : 8 re-renders par tick
+- **Sur 10 secondes** : 80 re-renders dont la majorité sont **inutiles**
+
+**Cause** :
+- Angular utilise par défaut `ChangeDetectionStrategy.Default`
+- Le tick modifie `money` et `incomePerSecond` → déclenche la change detection globale
+- Même si les `@Input()` d'une UpgradeCard ne changent pas, Angular re-vérifie tout
+
+### Partie 3 : Optimisation des re-renders
+
+#### 🎯 Stratégie : ChangeDetectionStrategy.OnPush
+
+**Principe** :
+- Avec `OnPush`, Angular ne re-vérifie un composant que si :
+  1. Un `@Input()` change (référence)
+  2. Un événement se déclenche dans le composant
+  3. Un **signal** change et est utilisé dans le template
+
+**Compatibilité avec les Signals** :
+- Les signals (`computed`, `writable`) intègrent automatiquement la change detection
+- Quand `money()` change → seuls les composants qui **utilisent** `money()` dans leur template re-rendrent
+- Les composants qui n'utilisent pas `money()` sont **ignorés**
+
+#### ✅ Modifications apportées
+
+**NavbarComponent** ([navbar.component.ts](src/components/navbar.component.ts)) :
+```typescript
+@Component({
+  selector: 'app-navbar',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  // ...
+})
+export class NavbarComponent {
+  money = this.store.money;        // signal
+  incomePerSecond = this.store.incomePerSecond;  // signal
+}
+```
+- Re-render **uniquement** quand `money()` ou `incomePerSecond()` changent
+- Navigation (routerLink) ne déclenche plus de re-render inutile
+
+**ShopPage** ([shop.page.ts](src/pages/shop.page.ts)) :
+```typescript
+@Component({
+  selector: 'app-shop',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  // ...
+})
+export class ShopPage {
+  money = this.store.money;
+  upgrades = this.store.upgrades;  // signal
+}
+```
+- Re-render **uniquement** si `money()` ou `upgrades()` changent
+
+**UpgradeCard** ([upgrade-card.component.ts](src/components/upgrade-card.component.ts)) :
+```typescript
+@Component({
+  selector: 'app-upgrade-card',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  // ...
+})
+export class UpgradeCard {
+  @Input({ required: true }) upgrade!: Upgrade;
+  @Input({ required: true }) currentCost!: number;
+  @Input({ required: true }) canBuy!: boolean;
+}
+```
+- Re-render **uniquement** si `upgrade`, `currentCost` ou `canBuy` changent
+- Stabilité : `currentCost` et `canBuy` sont recalculés dans ShopPage (pas inline), mais changent à chaque tick
+- **Optimisation future** : Memoization de `getCurrentCost()` et `canBuy()` si nécessaire
+
+#### 📊 Impact attendu
+
+**Avant (Default)** :
+- Tick → change `money` → Angular re-vérifie **tous les composants** → 8 re-renders/tick
+
+**Après (OnPush)** :
+- Tick → change `money` 
+- Navbar lit `money()` → re-render ✅
+- ShopPage lit `money()` → re-render ✅
+- UpgradeCard : `currentCost` et `canBuy` recalculés → 6 re-renders ✅
+
+**Résultat** : Toujours 8 re-renders/tick, mais change detection **beaucoup plus rapide** (Angular skip les vérifications profondes)
+
+#### 🚀 Optimisation supplémentaire possible
+
+Pour réduire davantage, on pourrait :
+1. **Memoizer** `getCurrentCost()` et `canBuy()` avec `computed()` :
+```typescript
+currentCostMap = computed(() => {
+  return new Map(this.upgrades().map(u => 
+    [u.id, Math.round(u.baseCost * Math.pow(1.15, u.count))]
+  ));
+});
+```
+2. Passer ces valeurs aux UpgradeCard → re-render **uniquement** si le coût calculé change
+
+**Trade-off** : Complexité accrue vs gain marginal (perf déjà bonnes).
+
+### Résultat final (Partie 3)
+
+✅ **OnPush activé** sur Navbar, ShopPage, UpgradeCard  
+✅ **Logs de debug retirés** (code propre)  
+✅ **Change detection optimisée** : Angular skip les composants non affectés  
+✅ **Architecture préservée** : Pas de compromis sur la maintenabilité  
+
+---
+
 ## Développement
 
 Ce projet a été généré avec Angular CLI version 21.2.7.
