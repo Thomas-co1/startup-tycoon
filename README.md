@@ -543,6 +543,372 @@ Avec Angular 21 et les **signals**, on obtient le meilleur des deux mondes :
 - **Prévisibilité** du flux Redux
 - **Performance** optimale (change detection précise)
 
+## Persistance et sauvegarde (TP10)
+
+### Vue d'ensemble
+
+Le TP10 implémente un **système de persistance robuste** qui sauvegarde automatiquement la progression du joueur dans `localStorage` et la restaure au chargement de l'application.
+
+### Format de sauvegarde
+
+#### Clé localStorage
+
+```
+startup-tycoon-save
+```
+
+#### Structure JSON
+
+```json
+{
+  "version": 1,
+  "savedAt": 1700000000000,
+  "state": {
+    "money": 120,
+    "incomePerSecond": 4,
+    "clickValue": 1,
+    "upgrades": [],
+    "totalClicks": 42,
+    "totalEarned": 999
+  }
+}
+```
+
+#### Propriétés
+
+- **`version`** (number) : Version du format de sauvegarde (actuellement `1`)
+- **`savedAt`** (timestamp) : Date/heure de la sauvegarde en millisecondes
+- **`state`** (GameState) : Snapshot complet de l'état du jeu
+
+### Architecture
+
+#### Service StorageService
+
+Le service `StorageService` (`src/services/storage.service.ts`) centralise toute la logique de persistance :
+
+```typescript
+@Injectable({ providedIn: 'root' })
+export class StorageService {
+  saveGame(state: GameState): void;     // Sauvegarde l'état
+  loadGame(): GameState | null;         // Charge l'état (ou null)
+  clearSave(): void;                    // Efface la sauvegarde
+  getLastSavedDate(): Date | null;      // Date de dernière sauvegarde
+  private isValidSaveData(data: any): boolean; // Validation stricte
+}
+```
+
+**Avantages** :
+- ✅ Séparation des responsabilités
+- ✅ Réutilisable et testable
+- ✅ Pas de `localStorage.setItem()` éparpillé dans tout le code
+- ✅ Gestion d'erreurs centralisée
+
+### Restauration au chargement
+
+Au démarrage de l'application, le `GameStore` :
+
+1. Appelle `storageService.loadGame()`
+2. Si aucune sauvegarde → utilise `initialState`
+3. Si une sauvegarde existe :
+   - Vérifie que c'est un JSON valide
+   - Vérifie que `version === 1`
+   - Valide tous les champs (`money`, `incomePerSecond`, types, valeurs positives...)
+4. Si invalide → ignore et démarre avec `initialState` (pas de crash)
+
+**Code dans GameStore** :
+
+```typescript
+private loadInitialState(): GameState {
+  const savedState = this.storageService.loadGame();
+  
+  if (savedState) {
+    console.log('[GameStore] État restauré depuis la sauvegarde');
+    return savedState;
+  }
+  
+  console.log('[GameStore] Démarrage avec l\'état initial');
+  return initialState;
+}
+```
+
+### Sauvegarde automatique intelligente
+
+Le système implémente une **stratégie de sauvegarde à deux niveaux** :
+
+#### 1. Throttle périodique (2 secondes)
+
+```typescript
+private needsSave = false;
+
+constructor() {
+  // Sauvegarde périodique avec throttle
+  this.saveIntervalId = window.setInterval(() => {
+    if (this.needsSave) {
+      this.storageService.saveGame(this.state());
+      this.needsSave = false;
+    }
+  }, 2000); // Throttle de 2 secondes
+}
+```
+
+- Le flag `needsSave` est mis à `true` à chaque action
+- Toutes les 2 secondes, si le flag est `true` → sauvegarde
+- Évite le spam de localStorage
+
+#### 2. Sauvegarde immédiate pour actions critiques
+
+```typescript
+dispatch(action: GameAction): void {
+  const currentState = this.state();
+  const newState = gameReducer(currentState, action);
+  this.state.set(newState);
+
+  this.needsSave = true; // Marquer qu'une sauvegarde est nécessaire
+
+  // Sauvegarde immédiate pour les actions importantes
+  if (
+    action.type === GameActionType.BUY_UPGRADE ||
+    action.type === GameActionType.RESET_GAME
+  ) {
+    this.storageService.saveGame(newState);
+    this.needsSave = false;
+  }
+}
+```
+
+**Actions avec sauvegarde immédiate** :
+- `BUY_UPGRADE` : Pas de perte d'achat coûteux
+- `RESET_GAME` : État vide persisté instantanément
+
+**Actions avec throttle** :
+- `CLICK` : Sauvegardé toutes les 2 secondes max
+- `TICK` : Sauvegardé toutes les 2 secondes max
+
+### Page Settings
+
+La page Settings (`/settings`) offre :
+
+#### Affichage de la dernière sauvegarde
+
+```typescript
+getLastSavedDate(): Date | null {
+  const json = localStorage.getItem(SAVE_KEY);
+  if (!json) return null;
+  const saveData = JSON.parse(json) as SaveData;
+  return new Date(saveData.savedAt);
+}
+```
+
+Affiche : `16/04/2026 à 14:23:45` (format français)
+
+#### Bouton Reset Save
+
+- Confirmation avec détails de ce qui sera perdu
+- Actions :
+  1. `storageService.clearSave()` → Efface `localStorage`
+  2. `store.resetGame()` → Dispatch `RESET_GAME`
+  3. Mise à jour de l'affichage
+  4. Message de confirmation
+
+### Analyse critique
+
+#### 1. Pourquoi ne pas sauvegarder à chaque tick sans throttle ?
+
+**Problème de performance et d'usure** :
+
+Le tick s'exécute **toutes les secondes**. Sans throttle :
+- 60 écritures localStorage par minute
+- 3600 écritures par heure
+- 86 400 écritures par jour de jeu
+
+**Conséquences** :
+- ⚠️ **Performance dégradée** : `localStorage.setItem()` est une opération synchrone et coûteuse (parsing JSON + I/O)
+- ⚠️ **Usure SSD** : Écritures excessives sur le disque
+- ⚠️ **Blocage du thread principal** : Chaque écriture bloque l'Event Loop
+- ⚠️ **Quota localStorage** : Peut saturer le quota de 5-10MB selon les navigateurs
+
+**Solution adoptée** :
+- Throttle de 2 secondes → max 30 écritures/minute (60x moins)
+- Sauvegarde immédiate uniquement pour les actions importantes
+- Meilleure balance entre sécurité des données et performance
+
+#### 2. Que se passe-t-il si le JSON est corrompu ?
+
+**Scénarios de corruption** :
+- Fermeture brutale du navigateur pendant l'écriture
+- Extension malveillante modifiant `localStorage`
+- Manipulation manuelle via DevTools
+- Changement de format entre versions
+
+**Gestion robuste** :
+
+```typescript
+private isValidSaveData(data: any): data is SaveData {
+  // Vérification structurelle
+  if (!data || typeof data !== 'object') return false;
+  if (data.version !== SAVE_VERSION) return false;
+  if (typeof data.savedAt !== 'number') return false;
+  
+  // Validation métier
+  if (typeof data.state.money !== 'number' || data.state.money < 0) return false;
+  if (!Array.isArray(data.state.upgrades)) return false;
+  // ... autres validations
+  
+  return true;
+}
+```
+
+**Comportement en cas d'erreur** :
+1. Le `try/catch` capture l'exception
+2. Le système log un avertissement dans la console
+3. `loadGame()` retourne `null`
+4. Le jeu démarre avec `initialState`
+5. **Aucun crash, aucune perte d'UX**
+
+**Logs émis** :
+```
+[Storage] Format de sauvegarde invalide, ignoré
+[GameStore] Démarrage avec l'état initial
+```
+
+#### 3. À quoi sert `version` dans la sauvegarde ?
+
+**Objectif** : Gérer l'évolution du format de sauvegarde entre versions de l'application.
+
+**Cas d'usage** :
+
+**Version 1** (actuelle) :
+```json
+{
+  "version": 1,
+  "state": { "money": 100, "clickValue": 1, ... }
+}
+```
+
+**Version 2** (hypothétique, ajout de nouvelles features) :
+```json
+{
+  "version": 2,
+  "state": {
+    "money": 100,
+    "clickValue": 1,
+    "prestige": { "level": 2, "unlocks": [...] }, // NOUVEAU
+    "achievements": [...] // NOUVEAU
+  }
+}
+```
+
+**Migration automatique** :
+```typescript
+if (saveData.version === 1) {
+  // Migrer vers version 2
+  return {
+    ...saveData.state,
+    prestige: { level: 0, unlocks: [] },
+    achievements: []
+  };
+}
+```
+
+**Avantages** :
+- ✅ Permet l'ajout de nouvelles features sans casser les anciennes sauvegardes
+- ✅ Détection des formats incompatibles
+- ✅ Possibilité de migrations automatiques
+- ✅ Rollback possible (ignorer les versions trop récentes)
+
+#### 4. Quelles données avez-vous choisi de sauvegarder, et pourquoi ?
+
+**Données sauvegardées** : TOUT le `GameState`
+
+```typescript
+export interface GameState {
+  money: number;              // ✅ Sauvegardé
+  clickValue: number;         // ✅ Sauvegardé
+  incomePerSecond: number;    // ✅ Sauvegardé
+  upgrades: Upgrade[];        // ✅ Sauvegardé
+  totalClicks: number;        // ✅ Sauvegardé
+  totalEarned: number;        // ✅ Sauvegardé
+}
+```
+
+**Justification** :
+
+| Donnée | Pourquoi la sauvegarder ? |
+|--------|---------------------------|
+| `money` | **Essentiel** : Perte = frustration du joueur |
+| `clickValue` | Peut être recalculé depuis `upgrades`, mais sauvegardé pour cohérence |
+| `incomePerSecond` | Idem, recalculable mais sauvegardé pour simplifier la restauration |
+| `upgrades` | **Critique** : Liste des achats permanents du joueur |
+| `totalClicks` | Statistique pour engagement, pas critique mais utile |
+| `totalEarned` | Statistique pour achievements futurs |
+
+**Données NON sauvegardées** :
+- ❌ Timers/intervals (recréés au démarrage)
+- ❌ Références/callbacks (non sérialisables)
+- ❌ State UI éphémère (hors scope)
+
+**Philosophie** :
+> Sauvegarder **toute la progression du joueur**, mais **rien d'éphémère ou de recalculable**.
+
+### Récapitulatif : Flux complet
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     FLUX DE PERSISTANCE                          │
+└─────────────────────────────────────────────────────────────────┘
+
+DÉMARRAGE
+  ↓
+GameStore.constructor()
+  ↓
+loadInitialState()
+  ↓
+StorageService.loadGame() ──→ localStorage.getItem('startup-tycoon-save')
+  ↓                              ↓
+  ├─ Aucune save          → initialState
+  ├─ JSON invalide        → initialState (pas de crash)
+  └─ JSON valide          → état restauré
+  ↓
+Application démarre avec le bon état
+
+────────────────────────────────────────────────────────────────
+
+PENDANT LE JEU
+  ↓
+Action (CLICK, TICK, BUY_UPGRADE...)
+  ↓
+dispatch(action)
+  ↓
+needsSave = true
+  ↓
+Si action importante (BUY_UPGRADE, RESET) → Sauvegarde immédiate
+Sinon → Attendre le throttle (2 sec)
+  ↓
+StorageService.saveGame(state)
+  ↓
+localStorage.setItem('startup-tycoon-save', JSON.stringify(saveData))
+
+────────────────────────────────────────────────────────────────
+
+RESET SAVE (depuis Settings)
+  ↓
+Confirmation utilisateur
+  ↓
+StorageService.clearSave() → localStorage.removeItem(...)
+  ↓
+store.resetGame() → dispatch(RESET_GAME)
+  ↓
+État = initialState (sauvegarde immédiate)
+```
+
+### Résultat final
+
+✅ **Persistance robuste** : Le jeu survit aux refresh, fermetures de navigateur, crashes  
+✅ **Performance optimisée** : Throttle intelligent, pas de spam localStorage  
+✅ **Gestion d'erreurs** : JSON corrompu → pas de crash, démarrage propre  
+✅ **UX soignée** : Settings avec affichage "Last saved" + Reset confirmé  
+✅ **Maintenabilité** : Service dédié, séparation des responsabilités  
+
 ## Développement
 
 Ce projet a été généré avec Angular CLI version 21.2.7.
