@@ -1,8 +1,8 @@
-import { Component, signal, effect, OnInit } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { Upgrade } from '../models/upgrade.model';
 import { UpgradeCard } from '../components/upgrade-card.component';
-import { UPGRADES } from '../data/upgrades.data';
-import { loadGameData, saveGameData } from '../utils/localStorage';
+import { GameStore } from '../store/game.store';
+import { GameActions } from '../state/game.actions';
 
 @Component({
   selector: 'app-shop',
@@ -143,33 +143,13 @@ import { loadGameData, saveGameData } from '../utils/localStorage';
     }
   `]
 })
-export class ShopPage implements OnInit {
-  money = signal(0);
-  incomePerSecond = signal(0);
-  upgrades = signal<Upgrade[]>([]);
+export class ShopPage {
+  private store = inject(GameStore);
 
-  constructor() {
-    // Sauvegarder automatiquement à chaque changement
-    effect(() => {
-      saveGameData('money', this.money());
-      saveGameData('incomePerSecond', this.incomePerSecond());
-      saveGameData('upgrades', this.upgrades());
-    });
-  }
-
-  ngOnInit(): void {
-    // Charger les données depuis localStorage
-    this.money.set(loadGameData('money', 0));
-    this.incomePerSecond.set(loadGameData('incomePerSecond', 0));
-    
-    // Charger les upgrades sauvegardées ou utiliser les valeurs par défaut
-    const savedUpgrades = loadGameData<Upgrade[]>('upgrades', []);
-    if (savedUpgrades.length > 0) {
-      this.upgrades.set(savedUpgrades);
-    } else {
-      this.upgrades.set(UPGRADES.map(u => ({ ...u })));
-    }
-  }
+  // Signals du store
+  money = this.store.money;
+  incomePerSecond = this.store.incomePerSecond;
+  upgrades = this.store.upgrades;
 
   getCurrentCost(upgrade: Upgrade): number {
     return Math.round(upgrade.baseCost * Math.pow(1.15, upgrade.count));
@@ -180,28 +160,12 @@ export class ShopPage implements OnInit {
   }
 
   buyUpgrade(upgrade: Upgrade): void {
-    const currentCost = this.getCurrentCost(upgrade);
-    
-    if (this.money() >= currentCost) {
-      // Déduire le coût
-      this.money.update(current => current - currentCost);
-      
-      // Augmenter le count de l'upgrade
-      upgrade.count += 1;
-      
-      // Augmenter le revenu passif
-      this.incomePerSecond.update(current => current + upgrade.incomePerSecondGain);
-      
-      // Mettre à jour le signal pour déclencher le re-render et la sauvegarde
-      this.upgrades.update(upgrades => [...upgrades]);
-      
-      console.log(`✅ Acheté: ${upgrade.name} (Count: ${upgrade.count}, Income: ${this.incomePerSecond()}$/sec)`);
-    } else {
-      console.log(`❌ Fonds insuffisants pour ${upgrade.name}. Coût: ${currentCost}$, Disponible: ${this.money()}$`);
-    }
+    this.store.dispatch(GameActions.buyUpgrade(upgrade));
+    console.log(`Tentative d'achat: ${upgrade.name}`);
   }
 
+  // TODO: Créer une action dédiée pour les tests si nécessaire
   addTestMoney(): void {
-    this.money.update(current => current + 100);
+    console.warn('Test button disabled - needs proper action');
   }
 }

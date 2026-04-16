@@ -1,7 +1,8 @@
-import { Component, signal, OnInit, OnDestroy, effect } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { GameHeader } from '../components/game-header.component';
 import { ClickButton } from '../components/click-button.component';
-import { loadGameData, saveGameData } from '../utils/localStorage';
+import { GameStore } from '../store/game.store';
+import { GameActions } from '../state/game.actions';
 
 @Component({
   selector: 'app-game',
@@ -91,26 +92,20 @@ import { loadGameData, saveGameData } from '../utils/localStorage';
   `]
 })
 export class GamePage implements OnInit, OnDestroy {
-  money = signal(loadGameData('money', 0));
-  clickValue = signal(loadGameData('clickValue', 1));
-  incomePerSecond = signal(loadGameData('incomePerSecond', 0));
+  private store = inject(GameStore);
+
+  // Signals du store
+  money = this.store.money;
+  clickValue = this.store.clickValue;
+  incomePerSecond = this.store.incomePerSecond;
 
   private intervalId?: number;
 
-  constructor() {
-    // Sauvegarder automatiquement à chaque changement
-    effect(() => {
-      saveGameData('money', this.money());
-      saveGameData('clickValue', this.clickValue());
-      saveGameData('incomePerSecond', this.incomePerSecond());
-    });
-  }
-
   ngOnInit(): void {
     this.intervalId = window.setInterval(() => {
+      this.store.dispatch(GameActions.tick());
       const income = this.incomePerSecond();
       if (income > 0) {
-        this.money.update(current => current + income);
         console.log(`[TICK] ${new Date().toLocaleTimeString()} - Argent gagné: ${income}€`);
       }
     }, 1000);
@@ -123,14 +118,15 @@ export class GamePage implements OnInit, OnDestroy {
   }
 
   handleClick(): void {
-    this.money.update(current => current + this.clickValue());
+    this.store.dispatch(GameActions.click());
   }
 
+  // TODO: Créer des actions dédiées pour les tests si nécessaire
   increaseIncome(): void {
-    this.incomePerSecond.update(current => current + 1);
+    console.warn('Test buttons disabled - needs proper actions');
   }
 
   resetIncome(): void {
-    this.incomePerSecond.set(0);
+    console.warn('Test buttons disabled - needs proper actions');
   }
 }
