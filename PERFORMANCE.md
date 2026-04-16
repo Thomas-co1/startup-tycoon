@@ -43,6 +43,27 @@
 
 ---
 
+### Partie 2 : Instrumentation des re-renders
+
+**Méthode** : Ajout de `ngDoCheck()` avec `console.log()` dans :
+- NavbarComponent
+- ShopPage
+- UpgradeCard
+
+**Observations** (capture après ~10 secondes sur `/shop`) :
+- **Chaque tick (1 seconde)** déclenche un re-render de :
+  - ShopPage
+  - Navbar
+  - **Toutes les 6 UpgradeCard** (CTO, Marketing, Data Center, Dev Junior, Dev Senior, Serveur Cloud)
+- Compteurs observés : Re-render #106, #107, #108...
+- **Problème identifié** : À chaque tick, **8 composants re-render** (1 shop + 1 navbar + 6 cards) alors que seuls money et incomePerSecond changent
+
+**Calcul** : Sur 10 secondes = 10 ticks × 8 composants = **80 re-renders** dont la plupart sont inutiles !
+
+**Screenshot** : `console-log.png`
+
+---
+
 ## APRÈS optimisation
 
 ### Lighthouse - Page Game (`/`)
