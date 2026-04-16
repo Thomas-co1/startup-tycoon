@@ -32,23 +32,27 @@ export function gameReducer(
     case GameActionType.BUY_UPGRADE: {
       const { upgrade } = action.payload;
 
+      // Calculer le coût actuel basé sur le count
+      const currentCost = Math.round(upgrade.baseCost * Math.pow(1.15, upgrade.count));
+
       // Vérifier si l'achat est possible
-      if (state.money < upgrade.baseCost) {
-        return state; // Pas assez d'argent, on ne change rien
+      if (state.money < currentCost) {
+        return state; // Pas assez d'argent
       }
 
-      // Vérifier si l'upgrade existe déjà
-      const existingUpgrade = state.upgrades.find((u) => u.id === upgrade.id);
-      if (existingUpgrade) {
-        return state; // Upgrade déjà acheté, on ne change rien
-      }
+      // Trouver l'upgrade dans le state et augmenter son count
+      const updatedUpgrades = state.upgrades.map(u =>
+        u.id === upgrade.id
+          ? { ...u, count: u.count + 1 }
+          : u
+      );
 
       // Appliquer l'upgrade
       return {
         ...state,
-        money: state.money - upgrade.baseCost,
+        money: state.money - currentCost,
         incomePerSecond: state.incomePerSecond + upgrade.incomePerSecondGain,
-        upgrades: [...state.upgrades, upgrade],
+        upgrades: updatedUpgrades,
       };
     }
 

@@ -1,4 +1,5 @@
 import { Upgrade } from '../models/upgrade.model';
+import { UPGRADES } from '../data/upgrades.data';
 
 /**
  * Interface du state global du jeu
@@ -21,7 +22,7 @@ export const initialState: GameState = {
   money: 0,
   clickValue: 1,
   incomePerSecond: 0,
-  upgrades: [],
+  upgrades: UPGRADES.map(u => ({ ...u })), // Copie des upgrades disponibles
   totalClicks: 0,
   totalEarned: 0
 };

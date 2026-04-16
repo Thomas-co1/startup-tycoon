@@ -3,6 +3,7 @@ import { GameState, initialState } from '../state/game.state';
 import { GameAction, GameActions, GameActionType } from '../state/game.actions';
 import { gameReducer } from '../state/game.reducer';
 import { StorageService } from '../services/storage.service';
+import { UPGRADES } from '../data/upgrades.data';
 
 /**
  * Store global du jeu - point central de gestion de l'état
@@ -51,6 +52,16 @@ export class GameStore {
     
     if (savedState) {
       console.log('[GameStore] État restauré depuis la sauvegarde');
+      
+      // Migration : si les upgrades sont vides, les restaurer depuis UPGRADES
+      if (savedState.upgrades.length === 0) {
+        console.log('[GameStore] Migration: restauration des upgrades depuis UPGRADES');
+        return {
+          ...savedState,
+          upgrades: UPGRADES.map(u => ({ ...u, count: 0 }))
+        };
+      }
+      
       return savedState;
     }
     
