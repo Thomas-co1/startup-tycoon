@@ -1046,6 +1046,135 @@ currentCostMap = computed(() => {
 ✅ **Change detection optimisée** : Angular skip les composants non affectés  
 ✅ **Architecture préservée** : Pas de compromis sur la maintenabilité  
 
+### Partie 4 : Recherche d'upgrades avec Debounce
+
+#### 🎯 Objectif
+
+Ajouter une fonctionnalité de recherche dans le Shop pour filtrer les upgrades par nom ou description, avec un **debounce** pour éviter de recalculer le filtrage à chaque frappe.
+
+#### ⚠️ Problème sans debounce
+
+Sans debounce, chaque frappe dans l'input déclenche :
+- Une mise à jour du state
+- Un re-calcul du filtrage (6 upgrades × comparaisons de strings)
+- Un re-render du composant
+- Une mise à jour du DOM
+
+**Impact** : Sur une recherche rapide ("Development"), 11 caractères = **11 recalculs** dont 10 sont inutiles.
+
+#### ✅ Solution : Debounce avec RxJS
+
+**Implémentation** ([shop.page.ts](src/pages/shop.page.ts)) :
+
+```typescript
+export class ShopPage implements OnDestroy {
+  // Subject pour gérer les inputs bruts
+  private searchInput$ = new Subject<string>();
+  
+  // Signal qui contient le terme de recherche (après debounce)
+  searchTerm = signal<string>('');
+
+  // Computed qui filtre les upgrades selon searchTerm
+  filteredUpgrades = computed(() => {
+    const term = this.searchTerm().toLowerCase().trim();
+    if (!term) return this.upgrades();
+    
+    return this.upgrades().filter(upgrade =>
+      upgrade.name.toLowerCase().includes(term) ||
+      upgrade.description.toLowerCase().includes(term)
+    );
+  });
+
+  constructor() {
+    // Debounce de 300ms : attend 300ms après la dernière frappe
+    this.searchInput$
+      .pipe(debounceTime(300))
+      .subscribe(term => this.searchTerm.set(term));
+  }
+
+  onSearchInput(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.searchInput$.next(input.value);  // Push dans le Subject
+  }
+}
+```
+
+**Template** :
+```html
+<input 
+  type="text" 
+  class="search-input"
+  placeholder="🔍 Rechercher un upgrade..."
+  (input)="onSearchInput($event)"
+/>
+
+<!-- Affichage du nombre de résultats -->
+@if (searchTerm()) {
+  <span class="search-results">{{ filteredUpgrades().length }} résultat(s)</span>
+}
+
+<!-- Grille avec upgrades filtrées -->
+<div class="upgrades-grid">
+  @for (upgrade of filteredUpgrades(); track upgrade.id) {
+    <app-upgrade-card ... />
+  }
+  @empty {
+    <div class="no-results">😕 Aucun upgrade trouvé</div>
+  }
+}
+```
+
+#### 🔄 Flux de données
+
+```
+User tape "Dev"
+  ↓
+onSearchInput() → searchInput$.next("D")
+  ↓ [debounce 300ms]
+onSearchInput() → searchInput$.next("De")
+  ↓ [debounce 300ms]
+onSearchInput() → searchInput$.next("Dev")
+  ↓ [attend 300ms... aucune nouvelle frappe]
+  ↓
+searchTerm.set("Dev")  ← UN SEUL update
+  ↓
+filteredUpgrades() recalculé (computed)
+  ↓
+Template re-render avec les résultats filtrés
+```
+
+**Résultat** : 3 frappes → **1 seul filtrage** au lieu de 3 !
+
+#### 📊 Avantages du debounce
+
+1. **Performance** : Réduit drastiquement les calculs inutiles
+2. **UX** : Plus fluide, pas de lag pendant la frappe
+3. **Scalabilité** : Si on avait 100 upgrades, l'impact serait encore plus visible
+4. **Best practice** : Pattern standard pour les auto-complete et recherches en temps réel
+
+#### 🎨 Fonctionnalités ajoutées
+
+- **Recherche insensible à la casse** : "dev" trouve "Dev Junior"
+- **Recherche dans nom ET description** : Maximum de pertinence
+- **Compteur de résultats** : Feedback visuel immédiat
+- **Message "Aucun résultat"** : UX propre avec `@empty`
+- **Debounce configurable** : 300ms (balance entre réactivité et performance)
+
+#### 🧪 Tests manuels réalisables
+
+1. Taper rapidement "Development" → observer qu'il n'y a qu'un seul filtrage à la fin
+2. Taper "dev" → voir tous les upgrades avec "Dev" dans le nom
+3. Taper "xyz123" → voir le message "Aucun upgrade trouvé"
+4. Effacer la recherche → tous les upgrades réapparaissent
+
+### Résultat final (Partie 4)
+
+✅ **Recherche fonctionnelle** : Filtrage par nom ou description  
+✅ **Debounce de 300ms** : Optimisation des calculs  
+✅ **UX soignée** : Compteur de résultats + message @empty  
+✅ **Architecture propre** : Subject RxJS + Signal + Computed  
+✅ **Performance mesurable** : 11 frappes → 1 recalcul au lieu de 11  
+
 ---
 
 ## Développement

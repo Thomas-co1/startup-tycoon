@@ -1,4 +1,5 @@
-import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, ChangeDetectionStrategy, signal, computed, OnDestroy } from '@angular/core';
+import { Subject, debounceTime } from 'rxjs';
 import { Upgrade } from '../models/upgrade.model';
 import { UpgradeCard } from '../components/upgrade-card.component';
 import { GameStore } from '../store/game.store';
@@ -28,14 +29,32 @@ import { GameActions } from '../state/game.actions';
         </div>
       </div>
 
+      <div class="search-container">
+        <input 
+          type="text" 
+          class="search-input"
+          placeholder="🔍 Rechercher un upgrade..."
+          (input)="onSearchInput($event)"
+        />
+        @if (searchTerm()) {
+          <span class="search-results">{{ filteredUpgrades().length }} résultat(s)</span>
+        }
+      </div>
+
       <div class="upgrades-grid">
-        @for (upgrade of upgrades(); track upgrade.id) {
+        @for (upgrade of filteredUpgrades(); track upgrade.id) {
           <app-upgrade-card
             [upgrade]="upgrade"
             [currentCost]="getCurrentCost(upgrade)"
             [canBuy]="canBuy(upgrade)"
             (onBuy)="buyUpgrade($event)"
           />
+        }
+        @empty {
+          <div class="no-results">
+            <p>😕 Aucun upgrade trouvé</p>
+            <p class="hint">Essayez une autre recherche</p>
+          </div>
         }
       </div>
 
@@ -104,11 +123,57 @@ import { GameActions } from '../state/game.actions';
       color: #007bff;
     }
 
+    .search-container {
+      margin-bottom: 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .search-input {
+      flex: 1;
+      max-width: 400px;
+      padding: 0.75rem 1rem;
+      font-size: 1rem;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      transition: all 0.3s;
+    }
+
+    .search-input:focus {
+      outline: none;
+      border-color: #007bff;
+      box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+    }
+
+    .search-results {
+      font-size: 0.9rem;
+      color: #666;
+      font-weight: 600;
+    }
+
     .upgrades-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
       gap: 1.5rem;
       margin-bottom: 2rem;
+    }
+
+    .no-results {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 3rem 1rem;
+      color: #999;
+    }
+
+    .no-results p {
+      margin: 0.5rem 0;
+      font-size: 1.2rem;
+    }
+
+    .no-results .hint {
+      font-size: 0.9rem;
+      color: #bbb;
     }
 
     .test-controls {
@@ -144,13 +209,45 @@ import { GameActions } from '../state/game.actions';
     }
   `]
 })
-export class ShopPage {
+export class ShopPage implements OnDestroy {
   private store = inject(GameStore);
+
+  // 🔍 TP11 Partie 4: Recherche avec debounce
+  private searchInput$ = new Subject<string>();
+  searchTerm = signal<string>('');
 
   // Signals du store
   money = this.store.money;
   incomePerSecond = this.store.incomePerSecond;
   upgrades = this.store.upgrades;
+
+  // Computed: filtrage des upgrades basé sur searchTerm
+  filteredUpgrades = computed(() => {
+    const term = this.searchTerm().toLowerCase().trim();
+    if (!term) {
+      return this.upgrades();
+    }
+    return this.upgrades().filter(upgrade =>
+      upgrade.name.toLowerCase().includes(term) ||
+      upgrade.description.toLowerCase().includes(term)
+    );
+  });
+
+  constructor() {
+    // Debounce de 300ms sur les inputs de recherche
+    this.searchInput$
+      .pipe(debounceTime(300))
+      .subscribe(term => this.searchTerm.set(term));
+  }
+
+  ngOnDestroy(): void {
+    this.searchInput$.complete();
+  }
+
+  onSearchInput(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.searchInput$.next(input.value);
+  }
 
   getCurrentCost(upgrade: Upgrade): number {
     return Math.round(upgrade.baseCost * Math.pow(1.15, upgrade.count));
