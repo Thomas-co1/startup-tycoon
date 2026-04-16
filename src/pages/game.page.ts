@@ -1,7 +1,7 @@
-import { Component, inject } from '@angular/core';
+import { Component, signal, OnInit, OnDestroy, effect } from '@angular/core';
 import { GameHeader } from '../components/game-header.component';
 import { ClickButton } from '../components/click-button.component';
-import { GameStateService } from '../services/game-state.service';
+import { loadGameData, saveGameData } from '../utils/localStorage';
 
 @Component({
   selector: 'app-game',
@@ -9,11 +9,11 @@ import { GameStateService } from '../services/game-state.service';
   imports: [GameHeader, ClickButton],
   template: `
     <div class="page-container">
-      <app-game-header [money]="gameState.money()" [incomePerSecond]="gameState.incomePerSecond()" />
+      <app-game-header [money]="money()" [incomePerSecond]="incomePerSecond()" />
       
       <div class="game-content">
         <app-click-button 
-          [clickValue]="gameState.clickValue()" 
+          [clickValue]="clickValue()" 
           (onClick)="handleClick()"
         />
       </div>
@@ -90,18 +90,47 @@ import { GameStateService } from '../services/game-state.service';
     }
   `]
 })
-export class GamePage {
-  gameState = inject(GameStateService);
+export class GamePage implements OnInit, OnDestroy {
+  money = signal(loadGameData('money', 0));
+  clickValue = signal(loadGameData('clickValue', 1));
+  incomePerSecond = signal(loadGameData('incomePerSecond', 0));
+
+  private intervalId?: number;
+
+  constructor() {
+    // Sauvegarder automatiquement à chaque changement
+    effect(() => {
+      saveGameData('money', this.money());
+      saveGameData('clickValue', this.clickValue());
+      saveGameData('incomePerSecond', this.incomePerSecond());
+    });
+  }
+
+  ngOnInit(): void {
+    this.intervalId = window.setInterval(() => {
+      const income = this.incomePerSecond();
+      if (income > 0) {
+        this.money.update(current => current + income);
+        console.log(`[TICK] ${new Date().toLocaleTimeString()} - Argent gagné: ${income}€`);
+      }
+    }, 1000);
+  }
+
+  ngOnDestroy(): void {
+    if (this.intervalId !== undefined) {
+      clearInterval(this.intervalId);
+    }
+  }
 
   handleClick(): void {
-    this.gameState.addMoney(this.gameState.clickValue());
+    this.money.update(current => current + this.clickValue());
   }
 
   increaseIncome(): void {
-    this.gameState.addIncomePerSecond(1);
+    this.incomePerSecond.update(current => current + 1);
   }
 
   resetIncome(): void {
-    this.gameState.incomePerSecond.set(0);
+    this.incomePerSecond.set(0);
   }
 }
