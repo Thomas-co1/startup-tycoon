@@ -220,6 +220,329 @@ Cette implémentation démontre concrètement **pourquoi un state global est né
 
 **Prochaine étape** : Implémenter un service de state global (ou utiliser un store comme NgRx/Akita) pour résoudre ces problèmes architecturaux.
 
+## Architecture Redux (TP9)
+
+### Vue d'ensemble : Pattern Redux
+
+Le TP9 implémente une architecture **Redux-like** pour gérer le state global de manière prévisible et centralisée.
+
+#### Schéma du flux unidirectionnel
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        FLUX REDUX                                │
+└─────────────────────────────────────────────────────────────────┘
+
+    User Action (clic, achat...)
+              │
+              ▼
+    ┌──────────────────┐
+    │   View (Page)    │ ← Injecte le GameStore
+    │  game.page.ts    │
+    │  shop.page.ts    │
+    └──────────────────┘
+              │
+              │ dispatch(action)
+              ▼
+    ┌──────────────────────────────────────────────────────┐
+    │                   GAME STORE                         │
+    │  • État central (signal)                             │
+    │  • Computed pour accès (money, incomePerSecond...)   │
+    │  • dispatch(action) → appelle le reducer             │
+    │  • Tick global (setInterval dans constructor)        │
+    │  • Auto-save (effect → localStorage)                 │
+    └──────────────────────────────────────────────────────┘
+              │
+              │ (currentState, action)
+              ▼
+    ┌──────────────────────────────────────────────────────┐
+    │                   REDUCER                            │
+    │  Fonction pure : (state, action) → newState          │
+    │  • switch(action.type)                               │
+    │  • Immutabilité (spread operator)                    │
+    │  • Logique métier isolée                             │
+    └──────────────────────────────────────────────────────┘
+              │
+              │ newState
+              ▼
+    ┌──────────────────┐
+    │   State Signal   │ ← this.state.set(newState)
+    │   (writable)     │
+    └──────────────────┘
+              │
+              │ Réactivité Angular
+              ▼
+    ┌──────────────────┐
+    │ Computed Signals │ ← money(), incomePerSecond()...
+    │    (readonly)    │
+    └──────────────────┘
+              │
+              │ Mise à jour automatique
+              ▼
+    ┌──────────────────┐
+    │   View (DOM)     │ ← Template rafraîchi
+    └──────────────────┘
+```
+
+### Structure des fichiers
+
+```
+src/
+├── state/               # Définitions Redux
+│   ├── game.state.ts    # Interface GameState + initialState
+│   ├── game.actions.ts  # Types d'actions + creators
+│   └── game.reducer.ts  # Reducer pur (logique métier)
+│
+├── store/               # Store global
+│   └── game.store.ts    # Service Injectable + tick global
+│
+└── pages/
+    ├── game.page.ts     # Injecte store, dispatch(click/tick)
+    └── shop.page.ts     # Injecte store, dispatch(buyUpgrade)
+```
+
+### Les 4 piliers de Redux
+
+#### 1. State (src/state/game.state.ts)
+
+**Single Source of Truth** : Un seul objet contenant tout l'état du jeu.
+
+```typescript
+export interface GameState {
+  money: number;              // Argent du joueur
+  clickValue: number;         // Valeur par clic
+  incomePerSecond: number;    // Revenu passif
+  upgrades: Upgrade[];        // Upgrades achetés
+  totalClicks: number;        // Stats : nombre de clics
+  totalEarned: number;        // Stats : argent total gagné
+}
+
+export const initialState: GameState = {
+  money: 0,
+  clickValue: 1,
+  incomePerSecond: 0,
+  upgrades: [],
+  totalClicks: 0,
+  totalEarned: 0,
+};
+```
+
+#### 2. Actions (src/state/game.actions.ts)
+
+**Événements** qui décrivent ce qui se passe dans l'application.
+
+```typescript
+export enum GameActionType {
+  CLICK = 'CLICK',
+  TICK = 'TICK',
+  BUY_UPGRADE = 'BUY_UPGRADE',
+  RESET_GAME = 'RESET_GAME',
+}
+
+// Action Creators (fonctions helpers)
+export const GameActions = {
+  click: (): ClickAction => ({ type: GameActionType.CLICK }),
+  tick: (): TickAction => ({ type: GameActionType.TICK }),
+  buyUpgrade: (upgrade: Upgrade): BuyUpgradeAction => ({
+    type: GameActionType.BUY_UPGRADE,
+    payload: { upgrade },
+  }),
+  resetGame: (): ResetGameAction => ({ type: GameActionType.RESET_GAME }),
+};
+```
+
+#### 3. Reducer (src/state/game.reducer.ts)
+
+**Fonction pure** qui calcule le nouvel état en fonction de l'action.
+
+```typescript
+export function gameReducer(
+  state: GameState = initialState,
+  action: GameAction
+): GameState {
+  switch (action.type) {
+    case GameActionType.CLICK:
+      return {
+        ...state,
+        money: state.money + state.clickValue,
+        totalClicks: state.totalClicks + 1,
+        totalEarned: state.totalEarned + state.clickValue,
+      };
+
+    case GameActionType.TICK:
+      return {
+        ...state,
+        money: state.money + state.incomePerSecond,
+        totalEarned: state.totalEarned + state.incomePerSecond,
+      };
+
+    case GameActionType.BUY_UPGRADE:
+      const { upgrade } = action.payload;
+      if (state.money < upgrade.baseCost || 
+          state.upgrades.find(u => u.id === upgrade.id)) {
+        return state; // Achat impossible
+      }
+      return {
+        ...state,
+        money: state.money - upgrade.baseCost,
+        incomePerSecond: state.incomePerSecond + upgrade.incomePerSecondGain,
+        upgrades: [...state.upgrades, upgrade],
+      };
+
+    case GameActionType.RESET_GAME:
+      return { ...initialState };
+
+    default:
+      return state;
+  }
+}
+```
+
+**Principes du reducer :**
+- ✅ **Pure function** : Même input = même output, pas de side effects
+- ✅ **Immutabilité** : Ne modifie jamais `state`, retourne toujours un nouvel objet
+- ✅ **Prévisibilité** : Toute la logique métier est centralisée et testable
+
+#### 4. Store (src/store/game.store.ts)
+
+**Service global** qui orchestre tout : état, actions, réactivité, persistence.
+
+```typescript
+@Injectable({ providedIn: 'root' })
+export class GameStore {
+  // État privé (writable signal)
+  private state = signal<GameState>(this.loadInitialState());
+
+  // Computed publics (readonly)
+  money = computed(() => this.state().money);
+  clickValue = computed(() => this.state().clickValue);
+  incomePerSecond = computed(() => this.state().incomePerSecond);
+  upgrades = computed(() => this.state().upgrades);
+  totalClicks = computed(() => this.state().totalClicks);
+  totalEarned = computed(() => this.state().totalEarned);
+
+  constructor() {
+    // Auto-save dans localStorage
+    effect(() => {
+      saveGameData('gameState', this.state());
+    });
+
+    // Tick global (toutes les secondes)
+    setInterval(() => {
+      this.dispatch(GameActions.tick());
+    }, 1000);
+  }
+
+  // Dispatch une action
+  dispatch(action: GameAction): void {
+    const currentState = this.state();
+    const newState = gameReducer(currentState, action);
+    this.state.set(newState);
+  }
+}
+```
+
+### Utilisation dans les pages
+
+#### GamePage
+
+```typescript
+export class GamePage {
+  private store = inject(GameStore);
+
+  money = this.store.money;         // Computed du store
+  clickValue = this.store.clickValue;
+  incomePerSecond = this.store.incomePerSecond;
+
+  handleClick(): void {
+    this.store.dispatch(GameActions.click());  // Dispatch action
+  }
+}
+```
+
+#### ShopPage
+
+```typescript
+export class ShopPage {
+  private store = inject(GameStore);
+
+  money = this.store.money;
+  upgrades = this.store.upgrades;
+
+  buyUpgrade(upgrade: Upgrade): void {
+    this.store.dispatch(GameActions.buyUpgrade(upgrade));
+  }
+}
+```
+
+#### NavbarComponent
+
+La navbar injecte aussi le store pour afficher les stats globalement :
+
+```typescript
+export class NavbarComponent {
+  private store = inject(GameStore);
+
+  money = this.store.money;             // Visible partout
+  incomePerSecond = this.store.incomePerSecond;
+}
+```
+
+### Avantages de cette architecture
+
+#### ✅ State global partagé
+- Toutes les pages accèdent aux **mêmes données**
+- Changement de route → **pas de perte de données**
+
+#### ✅ Prévisibilité
+- Le flux est **unidirectionnel** : View → Action → Reducer → State → View
+- Toute modification passe par le reducer → **facile à déboguer**
+
+#### ✅ Testabilité
+- Le reducer est une **fonction pure** → tests simples et fiables
+- Pas de dépendances, pas de side effects
+
+#### ✅ Réactivité Angular
+- Les **signals** et **computed** assurent la mise à jour automatique du DOM
+- Pas besoin de `.subscribe()` ou de gestion manuelle
+
+#### ✅ Séparation des responsabilités
+- **State** : Structure des données
+- **Actions** : Vocabulaire des événements
+- **Reducer** : Logique métier
+- **Store** : Orchestration et infrastructure (tick, save)
+- **Pages** : UI uniquement, pas de logique métier
+
+#### ✅ Tick global
+- Le tick s'exécute **une seule fois** dans le constructor du store
+- Plus de problème de multiplication d'intervals (TP7)
+- Fonctionne même si aucune page n'est montée
+
+#### ✅ Persistence automatique
+- L'`effect()` sauvegarde automatiquement dans localStorage
+- Rechargement de page → état restauré
+
+### Comparaison TP8 vs TP9
+
+| Aspect | TP8 (Sans store) | TP9 (Avec Redux) |
+|--------|------------------|------------------|
+| **State** | Fragmenté (2 copies) | Centralisé (1 source) |
+| **Cohérence** | ❌ Incohérent | ✅ Cohérent |
+| **Persistence** | ❌ Perdue au routing | ✅ Automatique |
+| **Tick** | ⚠️ Local (GamePage) | ✅ Global (Store) |
+| **Logique métier** | Éparpillée | Centralisée (Reducer) |
+| **Testabilité** | Difficile | Facile (pure functions) |
+| **Réutilisabilité** | Duplication | DRY (Don't Repeat Yourself) |
+
+### Conclusion
+
+Le pattern Redux apporte une **architecture solide et scalable** pour gérer le state d'une application.
+
+Avec Angular 21 et les **signals**, on obtient le meilleur des deux mondes :
+- **Réactivité fine** (computed) sans `.subscribe()`
+- **Prévisibilité** du flux Redux
+- **Performance** optimale (change detection précise)
+
 ## Développement
 
 Ce projet a été généré avec Angular CLI version 21.2.7.

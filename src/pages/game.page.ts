@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { GameHeader } from '../components/game-header.component';
 import { ClickButton } from '../components/click-button.component';
 import { GameStore } from '../store/game.store';
@@ -91,31 +91,13 @@ import { GameActions } from '../state/game.actions';
     }
   `]
 })
-export class GamePage implements OnInit, OnDestroy {
+export class GamePage {
   private store = inject(GameStore);
 
   // Signals du store
   money = this.store.money;
   clickValue = this.store.clickValue;
   incomePerSecond = this.store.incomePerSecond;
-
-  private intervalId?: number;
-
-  ngOnInit(): void {
-    this.intervalId = window.setInterval(() => {
-      this.store.dispatch(GameActions.tick());
-      const income = this.incomePerSecond();
-      if (income > 0) {
-        console.log(`[TICK] ${new Date().toLocaleTimeString()} - Argent gagné: ${income}€`);
-      }
-    }, 1000);
-  }
-
-  ngOnDestroy(): void {
-    if (this.intervalId !== undefined) {
-      clearInterval(this.intervalId);
-    }
-  }
 
   handleClick(): void {
     this.store.dispatch(GameActions.click());

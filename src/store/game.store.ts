@@ -22,6 +22,8 @@ export class GameStore {
   totalClicks = computed(() => this.state().totalClicks);
   totalEarned = computed(() => this.state().totalEarned);
 
+  private tickIntervalId?: number;
+
   constructor() {
     // Sauvegarder automatiquement à chaque changement d'état
     effect(() => {
@@ -31,6 +33,11 @@ export class GameStore {
       // mais sera commenté en production pour éviter les side effects
       // console.log('State saved:', currentState);
     });
+
+    // Tick global : s'exécute toutes les secondes
+    this.tickIntervalId = window.setInterval(() => {
+      this.dispatch(GameActions.tick());
+    }, 1000);
   }
 
   /**
