@@ -1,6 +1,6 @@
-import { Injectable, signal, computed, effect, inject } from '@angular/core';
+import { Injectable, signal, computed, inject } from '@angular/core';
 import { GameState, initialState } from '../state/game.state';
-import { GameAction, GameActions } from '../state/game.actions';
+import { GameAction, GameActions, GameActionType } from '../state/game.actions';
 import { gameReducer } from '../state/game.reducer';
 import { StorageService } from '../services/storage.service';
 
@@ -25,13 +25,17 @@ export class GameStore {
   totalEarned = computed(() => this.state().totalEarned);
 
   private tickIntervalId?: number;
+  private saveIntervalId?: number;
+  private needsSave = false;
 
   constructor() {
-    // Sauvegarder automatiquement à chaque changement d'état
-    effect(() => {
-      const currentState = this.state();
-      this.storageService.saveGame(currentState);
-    });
+    // Sauvegarde périodique avec throttle (toutes les 2 secondes)
+    this.saveIntervalId = window.setInterval(() => {
+      if (this.needsSave) {
+        this.storageService.saveGame(this.state());
+        this.needsSave = false;
+      }
+    }, 2000); // Throttle de 2 secondes
 
     // Tick global : s'exécute toutes les secondes
     this.tickIntervalId = window.setInterval(() => {
@@ -61,6 +65,18 @@ export class GameStore {
     const currentState = this.state();
     const newState = gameReducer(currentState, action);
     this.state.set(newState);
+
+    // Marquer qu'une sauvegarde est nécessaire
+    this.needsSave = true;
+
+    // Sauvegarde immédiate pour les actions importantes
+    if (
+      action.type === GameActionType.BUY_UPGRADE ||
+      action.type === GameActionType.RESET_GAME
+    ) {
+      this.storageService.saveGame(newState);
+      this.needsSave = false; // Réinitialiser le flag car on vient de sauvegarder
+    }
   }
 
   /**
