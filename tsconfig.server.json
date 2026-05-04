@@ -6,5 +6,5 @@
     "module": "ESNext",
     "moduleResolution": "bundler"
   },
-  "files": ["src/main.server.ts", "server.ts"]
+  "files": ["src/main.server.ts"]
 }
