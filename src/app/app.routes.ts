@@ -18,6 +18,10 @@ export const routes: Routes = [
     loadComponent: () => import('../pages/settings.page').then(m => m.SettingsPage)
   },
   {
+    path: 'public-stats',
+    loadComponent: () => import('../pages/public-stats.page').then(m => m.PublicStatsPage)
+  },
+  {
     path: '**',
     loadComponent: () => import('../pages/not-found.page').then(m => m.NotFoundPage)
   }
