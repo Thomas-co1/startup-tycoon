@@ -2,11 +2,12 @@ import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { GameStore } from '../store/game.store';
 import { formatNumber } from '../utils/formatNumber';
+import { UserButtonComponent } from './user-button.component';
 
 @Component({
   selector: 'app-navbar',
   standalone: true,
-  imports: [RouterLink, RouterLinkActive],
+  imports: [RouterLink, RouterLinkActive, UserButtonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <nav class="navbar">
@@ -30,6 +31,8 @@ import { formatNumber } from '../utils/formatNumber';
           <li><a routerLink="/stats" routerLinkActive="active">Stats</a></li>
           <li><a routerLink="/settings" routerLinkActive="active">Settings</a></li>
         </ul>
+
+        <app-user-button />
       </div>
     </nav>
   `,
