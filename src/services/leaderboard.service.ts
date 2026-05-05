@@ -29,10 +29,13 @@ export class LeaderboardService {
    * Récupère le leaderboard depuis l'API
    */
   private async fetchLeaderboard(): Promise<LeaderboardEntry[]> {
-    const data = await this.apiService.get<LeaderboardEntry[]>('/api/leaderboard');
+    const response = await this.apiService.get<any>('/api/leaderboard');
+    
+    // Gérer différents formats de réponse (backend peut retourner { data: [] } ou directement [])
+    const data = Array.isArray(response) ? response : (response.data || response.leaderboard || []);
     
     // Ajouter le rang à chaque entrée
-    return data.map((entry, index) => ({
+    return data.map((entry: any, index: number) => ({
       ...entry,
       rank: index + 1,
     }));

@@ -21,7 +21,7 @@ import { GamesService } from '../services/games.service';
       } @else if (query.isError()) {
         <div class="error-state">
           <p class="error-icon">❌</p>
-          <p class="error-message">{{ query.error()?.message || 'Erreur lors du chargement' }}</p>
+          <p class="error-message">{{ query.error().message || 'Erreur lors du chargement' }}</p>
           <button class="retry-btn" (click)="query.refetch()">Réessayer</button>
         </div>
       } @else if (query.data()) {

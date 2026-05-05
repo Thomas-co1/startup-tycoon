@@ -28,9 +28,9 @@ export class ApiService {
       const token = await this.clerkService.getToken();
 
       // Construire les headers
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        ...options.headers,
+        ...(options.headers as Record<string, string>),
       };
 
       // Ajouter l'Authorization header si token disponible

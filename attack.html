@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>CSRF Attack Test (TP13 Partie 4)</title>
+</head>
+<body>
+  <h1>⚠️ Test d'attaque CSRF - TP13 Partie 4</h1>
+  <p>Ce fichier tente de soumettre un faux score à l'API sans autorisation explicite de l'utilisateur.</p>
+  
+  <h2>Scénario d'attaque</h2>
+  <p>Un site malveillant pourrait tenter d'exploiter les cookies de session automatiques pour effectuer des actions non désirées.</p>
+  
+  <form id="csrfForm" action="http://localhost:3000/api/games" method="POST">
+    <input type="hidden" name="score" value="999999999">
+    <input type="hidden" name="duration" value="300">
+    <input type="hidden" name="clicks" value="1">
+    <input type="hidden" name="upgrades" value="[]">
+    <button type="submit">Tenter l'attaque CSRF</button>
+  </form>
+  
+  <h2>Auto-submit dans 2 secondes...</h2>
+  <p id="status">Attente...</p>
+  
+  <script>
+    // Tentative d'auto-submit après 2 secondes
+    setTimeout(() => {
+      document.getElementById('status').textContent = 'Tentative de soumission...';
+      document.getElementById('csrfForm').submit();
+    }, 2000);
+  </script>
+  
+  <hr>
+  
+  <h2>🛡️ Pourquoi cette attaque échoue-t-elle ?</h2>
+  <ol>
+    <li><strong>Pas de cookie automatique</strong> : Notre API utilise <code>Authorization: Bearer</code> dans les headers, pas les cookies.</li>
+    <li><strong>CORS</strong> : Le backend rejette les requêtes cross-origin sans les bons headers.</li>
+    <li><strong>Pas de Content-Type</strong> : Un formulaire HTML envoie <code>application/x-www-form-urlencoded</code>, mais notre API attend <code>application/json</code>.</li>
+    <li><strong>SameSite cookies</strong> : Même si on utilisait des cookies, <code>SameSite=Lax</code> (Clerk) bloquerait les requêtes cross-site POST.</li>
+  </ol>
+  
+  <h2>📊 Résultat attendu</h2>
+  <ul>
+    <li>❌ <strong>401 Unauthorized</strong> : Pas de token JWT dans le header Authorization</li>
+    <li>❌ <strong>CORS Error</strong> : Requête bloquée par le navigateur</li>
+    <li>✅ <strong>Aucun score enregistré</strong></li>
+  </ul>
+  
+  <h2>🔍 Pour observer l'échec</h2>
+  <ol>
+    <li>Ouvrir DevTools → Network</li>
+    <li>Cliquer sur le bouton ou attendre l'auto-submit</li>
+    <li>Observer la requête : status code, headers, response</li>
+  </ol>
+</body>
+</html>

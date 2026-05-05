@@ -6,6 +6,20 @@
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
+  
+  <!-- Content Security Policy (TP13 Partie 4) -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src 'self' https://clerk.com https://*.clerk.accounts.dev;
+    connect-src 'self' http://localhost:3000 ws://localhost:3000 https://clerk.com https://*.clerk.accounts.dev;
+    img-src 'self' data: https://img.clerk.com;
+    style-src 'self' 'unsafe-inline';
+    font-src 'self';
+    object-src 'none';
+    base-uri 'self';
+    form-action 'self';
+    frame-ancestors 'none';
+  ">
 </head>
 <body>
   <app-root></app-root>
