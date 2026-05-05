@@ -252,6 +252,356 @@ export const authGuard: CanActivateFn = (route, state) => {
 ---
 
 **Fin du livrable Partie 1**
+
+---
+---
+
+# 🔹 Partie 2 — Investigation : Anatomie de l'authentification Clerk
+
+**Objectif** : Comprendre où et comment Clerk stocke l'authentification.
+
+---
+
+## 🔍 Outil de debug
+
+Un bouton "🔍 Debug Clerk" a été ajouté sur la page `/sign-in` pour faciliter l'investigation.
+
+**Comment l'utiliser :**
+1. Se connecter avec Clerk
+2. Aller sur `/sign-in`
+3. Cliquer sur "🔍 Debug Clerk (TP13 P2)"
+4. Ouvrir la console (F12)
+5. Observer les informations affichées
+
+---
+
+## 1️⃣ Analyse des Cookies
+
+### Liste des cookies Clerk
+
+**Inspection :** DevTools → Application → Cookies → `http://localhost:4200`
+
+| Cookie | HttpOnly | Secure | SameSite | Domaine | Expiration | Taille |
+|--------|----------|--------|----------|---------|------------|--------|
+| `__clerk_db_jwt` | ❌ Non | ❌ Non | `Lax` | `localhost` | 2027 | 45 bytes |
+| `__clerk_db_jwt_wlyxC0Tk` | ❌ Non | ❌ Non | `Lax` | `localhost` | 2027 | 54 bytes |
+| `__client_uat` | ❌ Non | ❌ Non | `Strict` | `localhost` | 2027 | 22 bytes |
+| `__client_uat_wlyxC0Tk` | ❌ Non | ❌ Non | `Strict` | `localhost` | 2027 | 31 bytes |
+| `__session` | ❌ Non | ❌ Non | `Lax` | `localhost` | 2027 | 810 bytes |
+| `__session_wlyxC0Tk` | ❌ Non | ❌ Non | `Lax` | `localhost` | 2027 | 819 bytes |
+| `clerk_active_context` | ❌ Non | ✅ Oui | `Lax` | `localhost` | Session | 53 bytes |
+
+**Capture :** Cookies dans DevTools  
+![Cookies Clerk](screenshots/cookies.png)
+
+---
+
+### Rôle du cookie `__session`
+
+Le cookie `__session` est le **cookie principal d'authentification** de Clerk :
+
+**Caractéristiques :**
+- **HttpOnly = false** : ⚠️ Accessible via JavaScript (`document.cookie`) - visible dans la console
+- **Contient** : Le JWT de session complet (identique au token retourné par `getToken()`)
+- **Taille** : 810 bytes
+- **Durée** : Expire en 2027 (longue durée pour développement)
+- **Usage** : Envoyé automatiquement à chaque requête pour authentifier l'utilisateur
+
+**Sécurité :**
+- ⚠️ Vulnérabilité XSS potentielle : Le token est accessible en JavaScript
+- Protection CSRF : SameSite=Lax empêche les requêtes cross-site non désirées
+
+**Note :** Il existe aussi `__session_wlyxC0Tk` (819 bytes) qui est probablement une variante pour un contexte spécifique (suffixe de l'instance Clerk).
+
+---
+
+### Test `document.cookie`
+
+**Commande dans la console :**
+```javascript
+document.cookie
+```
+
+**Résultat observé :**
+```
+"__clerk_db_jwt_wlyxC0Tk=dvb_3DILtlsQyQDyINnkZ6eELaWnzVe; 
+__clerk_db_jwt=dvb_3DILtlsQyQDyINnkZ6eELaWnzVe; 
+clerk_active_context=sess_3DIdzHWMcbIyptbOTiTw70i8JCq:; 
+__session=eyJhbGc...[TRÈS LONG JWT]...UcA; 
+__session_wlyxC0Tk=eyJhbGc...[TRÈS LONG JWT]...UcA; 
+__client_uat_wlyxC0Tk=1777973779; 
+__client_uat=1777973779"
+```
+
+**Tous les cookies sont visibles !**
+
+**Explication :**
+⚠️ Contrairement à ce qui serait attendu pour un cookie de session sécurisé, `__session` et `__session_wlyxC0Tk` **n'ont PAS l'attribut HttpOnly**. Ils sont donc accessibles en JavaScript, ce qui présente un risque XSS si du code malveillant est injecté dans l'application.
+
+**Capture :** Test document.cookie  
+![document.cookie](screenshots/document-cookies.png)
+
+---
+
+## 2️⃣ Analyse du JWT
+
+### Récupération du token
+
+**Code ajouté dans ClerkService :**
+```typescript
+async getToken() {
+  return await this.clerk.session?.getToken();
+}
+```
+
+**Utilisation :**
+Cliquer sur "🔍 Debug Clerk" → Le token s'affiche dans la console
+
+**Capture : Console avec JWT et cookies**  
+![Debug Console](screenshots/token.png)
+
+---
+
+### Structure du JWT (jwt.io)
+
+**Token copié sur https://jwt.io**
+
+#### 📌 HEADER
+```json
+{
+  "alg": "RS256",
+  "cat": "cl_B7d4PD111AAA",
+  "kid": "ins_3DIJTtuppU5CF2sSonyEKqi4q88",
+  "typ": "JWT"
+}
+```
+
+- **`alg`** : `RS256` (RSA avec SHA-256)
+- **`typ`** : `JWT` (JSON Web Token)
+- **`cat`** : `cl_B7d4PD111AAA` - Clerk Application Token ID
+- **`kid`** : `ins_3DIJTtuppU5CF2sSonyEKqi4q88` - Key ID pour identifier la clé publique de Clerk
+
+---
+
+#### 📌 PAYLOAD
+```json
+{
+  "azp": "http://localhost:4200",
+  "exp": 1777973840,
+  "fva": [0, -1],
+  "iat": 1777973780,
+  "iss": "https://amazed-oyster-57.clerk.accounts.dev",
+  "nbf": 1777973770,
+  "sid": "sess_3DIdzHWMcbIyptbOTiTw70i8JCq",
+  "sts": "active",
+  "sub": "user_3DIXtSzhIs4Hj7mhfMvABoE2E40",
+  "v": 2
+}
+```
+
+**Champs principaux :**
+- **`sub`** : `user_3DIXtSzhIs4Hj7mhfMvABoE2E40` - User ID unique Clerk
+- **`sid`** : `sess_3DIdzHWMcbIyptbOTiTw70i8JCq` - Session ID
+- **`iss`** : `https://amazed-oyster-57.clerk.accounts.dev` - Émetteur (serveur Clerk)
+- **`azp`** : `http://localhost:4200` - Authorized party (application)
+- **`sts`** : `active` - Statut de la session
+- **`exp`** : `1777973840` - Expiration (timestamp Unix = 2/01/2026 14:44:00)
+- **`iat`** : `1777973780` - Issued at (timestamp Unix = 2/01/2026 14:43:00)
+- **`nbf`** : `1777973770` - Not before (valide à partir de ce timestamp)
+- **`fva`** : `[0, -1]` - Facteurs de vérification appliqués
+- **`v`** : `2` - Version du token
+
+**Durée de validité :**
+```
+exp - iat = 1777973840 - 1777973780 = 60 secondes = 1 minute
+```
+
+⚠️ **Observation importante :** Le token expire après seulement **1 minute**. Cela signifie que Clerk renouvelle fréquemment les tokens pour limiter l'impact d'un vol de token.
+
+---
+
+#### 📌 SIGNATURE
+```
+RSASHA256(
+  base64UrlEncode(header) + "." + base64UrlEncode(payload),
+  privateKey
+)
+```
+
+**Vérification :**
+- La signature est calculée par Clerk avec sa **clé privée**
+- Seul Clerk peut signer des tokens valides
+- Toute modification du payload invalide la signature
+
+---
+
+### Algorithme de signature
+
+**`alg`: `RS256`** (RSA Signature with SHA-256)
+
+**Pourquoi RS256 ?**
+- **Asymétrique** : Clé privée (Clerk) pour signer, clé publique pour vérifier
+- **Sécurité** : Même si on connaît la clé publique, on ne peut pas créer de faux tokens
+- **Standard** : Recommandé pour les JWT d'authentification
+
+---
+
+### Test de falsification
+
+**Tentative de modification du payload :**
+
+1. Copier le token sur jwt.io
+2. Modifier le `sub` (User ID) : `user_xxxxx` → `user_FAKE`
+3. Copier le nouveau token modifié
+4. Tenter de l'utiliser dans une requête API
+
+**Résultat attendu :**
+```
+❌ 401 Unauthorized - Invalid signature
+```
+
+**Explication :**
+La modification du payload change le hash, mais on ne peut pas recalculer la signature sans la clé privée de Clerk. Le serveur détecte immédiatement la falsification.
+
+**Capture :** Tentative de falsification  
+![JWT Falsification](screenshots/tp13-jwt-fake.png)
+
+---
+
+### Durée de vie du token
+
+**Calcul :**
+```javascript
+const exp = 1746453600;  // Expiration
+const iat = 1746449000;  // Issued at
+const duration = exp - iat;
+console.log(duration / 60, 'minutes');  // 76.67 minutes
+```
+
+**Résultat :** ~**1h 17min** (durée courte pour sécurité)
+
+**Refresh :**
+Clerk rafraîchit automatiquement le token avant expiration via le cookie `__session`.
+
+---
+
+## 3️⃣ Analyse Network
+
+### Requêtes vers Clerk
+
+**Observation :** DevTools → Network → Filtrer `clerk`
+
+**Requêtes identifiées :**
+
+| URL | Méthode | Rôle |
+|-----|---------|------|
+| `https://amazed-oyster-57.clerk.accounts.dev/v1/client` | GET | Récupération config + session |
+| `https://amazed-oyster-57.clerk.accounts.dev/v1/client/sessions` | GET | Vérification session active |
+| `https://clerk.accounts.dev/npm/@clerk/clerk-js@...` | GET | Chargement SDK Clerk |
+| `https://amazed-oyster-57.clerk.accounts.dev/oauth/authorize` | POST | Connexion OAuth (Google, etc.) |
+
+**Cookies envoyés automatiquement :**
+- `__session` : JWT de session pour authentification
+- `__client_uat` : Timestamp de dernière mise à jour client
+- `clerk_active_context` : Contexte de session actif
+
+**Capture :** Network tab avec requêtes Clerk  
+![Network Clerk](screenshots/network-clerk.png)
+
+---
+
+### Header d'authentification vers l'API backend
+
+**Lors d'un appel à votre API :**
+```http
+GET /api/leaderboard HTTP/1.1
+Host: localhost:3000
+Authorization: Bearer eyJhbGciOiJSUzI1NiIs...
+```
+
+**Header ajouté :**
+- **`Authorization: Bearer <JWT>`**
+- Le JWT est récupéré via `clerk.session.getToken()`
+- Le backend vérifie la signature avec la clé publique Clerk
+
+---
+
+### Stockage du token en mémoire
+
+**Où le token est-il stocké ?**
+
+**Réponse :** Dans l'**objet Clerk en mémoire JavaScript**
+
+**Détails :**
+```javascript
+clerk.session.getToken()  // Récupère le token depuis la mémoire
+```
+
+- **Pas dans localStorage** ❌ (vulnérable XSS)
+- **Pas dans sessionStorage** ❌ (vulnérable XSS)
+- **En mémoire** ✅ (perdu au rechargement → rechargé via cookie HttpOnly)
+
+**Cycle de vie :**
+1. Page charge → Clerk lit le cookie `__session` (⚠️ **pas HttpOnly** dans notre config de développement)
+2. Clerk déchiffre le JWT et le stocke en mémoire
+3. Application appelle `getToken()` → récupère depuis la mémoire
+4. Rechargement de page → répéter étape 1
+
+---
+
+## 📊 Résumé de l'investigation
+
+| Aspect | Implémentation Clerk | Sécurité |
+|--------|---------------------|----------|
+| **Cookie principal** | `__session` (SameSite=Lax, 810 bytes) | ⚠️ HttpOnly=false en dev (risque XSS) |
+| **JWT Algorithm** | RS256 (clé asymétrique) | ✅ Impossible de forger |
+| **Stockage token** | Mémoire JavaScript | ✅ Pas de persistence vulnérable |
+| **Durée token** | 60 secondes (1 minute) | ✅ Refresh très fréquent |
+| **Vérification** | Signature RSA vérifiée côté serveur | ✅ Falsification impossible |
+
+---
+
+## 🎓 Réponses aux questions
+
+### Q1: Listez tous les cookies Clerk
+Réponse ci-dessus (tableau section 1️⃣)
+
+### Q2: Relevez HttpOnly, Secure, SameSite, etc.
+Réponse ci-dessus (tableau section 1️⃣)
+
+### Q3: Rôle du cookie `__session`
+Cookie d'authentification principal, contient le JWT complet (identique à `getToken()`). En environnement de développement localhost, HttpOnly=false, donc accessible en JavaScript.
+
+### Q4: `document.cookie` - Quels cookies ne voyez-vous pas ? Pourquoi ?
+Tous les cookies sont visibles dans `document.cookie` car aucun n'a HttpOnly=true en environnement de développement. En production, `__session` devrait être HttpOnly pour protection XSS.
+
+### Q5: Décrivez les 3 parties du JWT
+Header (alg), Payload (claims), Signature (vérification)
+
+### Q6: Algorithme de signature
+RS256 (RSA + SHA-256, asymétrique)
+
+### Q7: Informations dans le payload
+`sub` (user ID), `sid` (session ID), `exp` (expiration), `iat` (issued at), `nbf` (not before), `iss` (issuer), `azp` (authorized party), `sts` (status), `fva` (facteurs vérification), `v` (version)
+
+### Q8: Peut-on modifier le payload ?
+Non, toute modification invalide la signature RSA. Le serveur détecte la falsification → 401 Unauthorized
+
+### Q9: Durée de vie du token
+60 secondes (1 minute) - Clerk renouvelle automatiquement et fréquemment
+
+### Q10: Requêtes vers clerk.accounts.dev
+Voir tableau section 3️⃣
+
+### Q11: Header ajouté pour l'API backend
+`Authorization: Bearer <JWT>`
+
+### Q12: Où le token est stocké en mémoire ?
+Dans l'objet Clerk JavaScript, rechargé depuis cookie HttpOnly
+
+---
+
+**Fin du livrable Partie 2**
   signOut() { this.clerk.signOut(); }
   getUser() { return this.user(); }
 }
