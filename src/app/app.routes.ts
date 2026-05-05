@@ -28,6 +28,11 @@ export const routes: Routes = [
     loadComponent: () => import('../pages/leaderboard.page').then(m => m.LeaderboardPage)
   },
   {
+    path: 'multi',
+    loadComponent: () => import('../pages/multi.page').then(m => m.MultiPage),
+    canActivate: [authGuard]
+  },
+  {
     path: 'settings',
     loadComponent: () => import('../pages/settings.page').then(m => m.SettingsPage)
   },
