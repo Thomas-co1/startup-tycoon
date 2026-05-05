@@ -24,6 +24,10 @@ export const routes: Routes = [
     canActivate: [authGuard]
   },
   {
+    path: 'leaderboard',
+    loadComponent: () => import('../pages/leaderboard.page').then(m => m.LeaderboardPage)
+  },
+  {
     path: 'settings',
     loadComponent: () => import('../pages/settings.page').then(m => m.SettingsPage)
   },

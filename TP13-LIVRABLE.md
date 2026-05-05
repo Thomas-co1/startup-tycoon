@@ -508,6 +508,18 @@ Clerk rafraîchit automatiquement le token avant expiration via le cookie `__ses
 **Capture :** Network tab avec requêtes Clerk  
 ![Network Clerk](screenshots/network-clerk.png)
 
+**Détails observés dans la capture :**
+- **Document principal** : `sign-in?__clerk_db_jwt=...` (5.1 kB) - Page de connexion
+- **Scripts Clerk** : `clerk.browser.js` - SDK JavaScript principal avec redirections 307
+- **Scripts UI** : `ui.browser.js`, `ui-common`, `vendors`, `signup`, `signin` - Composants UI du modal
+- **API Calls** : 
+  - `environment?__clerk_api_version=...` (2.6 kB) - Configuration environnement
+  - `client?__clerk_api_version=...` (0.6 kB) - Informations client
+  - `settings` - Paramètres de session
+- **Assets** : `google.svg` - Icône du bouton Google OAuth
+- **Timeline** : Toutes les requêtes se terminent en ~2 secondes
+- **Status codes** : Tous 200 (succès) ou 307 (redirect)
+
 ---
 
 ### Header d'authentification vers l'API backend
@@ -533,6 +545,554 @@ Authorization: Bearer eyJhbGciOiJSUzI1NiIs...
 **Réponse :** Dans l'**objet Clerk en mémoire JavaScript**
 
 **Détails :**
+- Clerk stocke le token dans l'objet `clerk.session` (propriété privée)
+- Accessible uniquement via `clerk.session.getToken()`
+- **Pas dans localStorage** (meilleure pratique sécurité)
+- **Pas dans sessionStorage**
+- Le token est rechargé depuis le cookie `__session` au rafraîchissement de la page
+
+**Pourquoi ne pas utiliser localStorage ?**
+- ❌ Vulnérable aux attaques XSS (JavaScript malveillant peut le lire)
+- ✅ Cookie avec SameSite = protection CSRF basique
+- ✅ Token short-lived (1 minute) = impact limité en cas de vol
+
+---
+
+**Fin du livrable Partie 2**
+
+---
+---
+
+# 🔹 Partie 3 — State Client vs State Serveur
+
+## 🎯 3️⃣ Pourquoi TanStack Query ?
+
+Cette section répond aux questions fondamentales sur la distinction entre **state client** et **state serveur**, et pourquoi une bibliothèque comme TanStack Query (ou Angular Query) est nécessaire.
+
+---
+
+### 1️⃣ Qu'est-ce qu'un **state client** ?
+
+Le **state client** représente les données qui **vivent uniquement côté navigateur** et qui n'existent pas sur un serveur. Ces données sont locales, éphémères (sauf si sauvegardées dans localStorage), et ne concernent que l'utilisateur actuel.
+
+**Caractéristiques :**
+- ✅ Source de vérité = le navigateur
+- ✅ Contrôle total par le client
+- ✅ Modifications instantanées
+- ✅ Pas de latence réseau
+- ❌ Perdu au refresh (sauf persistence localStorage)
+- ❌ Non partagé entre utilisateurs
+
+**2 exemples dans notre projet :**
+
+#### 📍 Exemple 1 : `money` (argent en cours de partie)
+
+**Localisation :** `GameStore` (`src/store/game.store.ts`)
+
+```typescript
+export class GameStore {
+  private state = signal<GameState>(this.loadInitialState());
+  money = computed(() => this.state().money);  // State client
+}
+```
+
+**Caractéristiques :**
+- Valeur qui évolue en temps réel à chaque clic et chaque tick
+- Géré dans `GameStore` avec un signal Angular
+- Persisté dans `localStorage` via `StorageService`
+- Rechargé au démarrage via `loadInitialState()`
+
+**Pourquoi c'est du state client ?**
+L'argent en cours de partie n'existe que dans le navigateur du joueur. Le serveur ne sait pas combien j'ai gagné **tant que je n'ai pas terminé ma partie**. C'est une donnée locale, temporaire, qui n'est envoyée au serveur qu'à la fin (pour enregistrer le score final).
+
+---
+
+#### 📍 Exemple 2 : `timer` (temps écoulé dans la partie en cours)
+
+**Localisation :** Variable locale ou state dans la page de jeu
+
+```typescript
+private tickIntervalId?: number;
+
+constructor() {
+  // Tick global : s'exécute toutes les secondes
+  this.tickIntervalId = window.setInterval(() => {
+    this.dispatch(GameActions.tick());
+  }, 1000);
+}
+```
+
+**Caractéristiques :**
+- Compteur qui s'incrémente chaque seconde pendant la partie
+- Géré localement avec `setInterval`
+- Non persisté (redémarre à chaque partie)
+- Utilisé pour déterminer la fin de la partie (5 minutes)
+
+**Pourquoi c'est du state client ?**
+Le timer est une donnée UI temporaire qui n'a de sens que pour la session de jeu en cours. Le serveur n'a pas besoin de savoir en temps réel depuis combien de temps je joue. Seule la durée finale (à la fin de la partie) sera envoyée au backend.
+
+---
+
+**Autres exemples dans le projet :**
+- `clickValue` (valeur du clic actuel) - calculé à partir des upgrades
+- `incomePerSecond` (revenus passifs) - calculé à partir des upgrades
+- `upgrades` (liste des upgrades achetées dans la partie en cours)
+- `totalClicks` (compteur de clics de la session)
+- État de l'UI : modals ouvertes, tabs actives, formulaires en cours de remplissage
+
+---
+
+### 2️⃣ Qu'est-ce qu'un **state serveur** ?
+
+Le **state serveur** représente les données qui **vivent sur un serveur distant** et qui sont partagées entre plusieurs clients. Ces données sont la **source de vérité autoritaire** : le client n'en possède qu'une **copie locale temporaire** (cache).
+
+**Caractéristiques :**
+- ✅ Source de vérité = le serveur (base de données)
+- ✅ Partagé entre tous les utilisateurs
+- ✅ Persiste même si le client se déconnecte
+- ✅ Peut être modifié par d'autres (multi-utilisateurs)
+- ❌ Latence réseau (fetch asynchrone)
+- ❌ Peut devenir obsolète (stale)
+- ❌ Nécessite synchronisation
+
+**2 exemples dans notre projet (TP13) :**
+
+#### 📍 Exemple 1 : Leaderboard all-time (top 20 des meilleurs scores)
+
+**Endpoint backend :** `GET /api/leaderboard` (public, pas d'auth)
+
+**Localisation backend :**
+```javascript
+// BackEndStartUpTycoon/src/routes/leaderboard.js
+router.get('/', async (req, res) => {
+  const games = await Game.find()
+    .sort({ score: -1 })
+    .limit(20)
+    .populate('userId', 'username');
+  res.json(games);
+});
+```
+
+**Caractéristiques :**
+- Données stockées dans la base de données MongoDB du backend
+- Accessible via endpoint REST public
+- Mise à jour à chaque fois qu'un joueur termine une partie solo avec un bon score
+- Partagé par tous les joueurs (vue globale)
+
+**Pourquoi c'est du state serveur ?**
+Le leaderboard est partagé par tous les joueurs. Si Alice termine une partie avec un score de 50 000$ et que Bob consulte le leaderboard 5 secondes après, il doit voir le score d'Alice. La source de vérité est la **base de données**, pas le navigateur.
+
+**Exemple de flux :**
+1. Alice joue 5 minutes, gagne 50 000$
+2. Timer expire → `POST /api/games` avec `{ score: 50000, userId: "alice_123" }`
+3. Backend enregistre dans MongoDB
+4. Bob refresh `/leaderboard` → `GET /api/leaderboard` → voit Alice dans le top 20
+
+---
+
+#### 📍 Exemple 2 : Historique personnel des parties terminées
+
+**Endpoint backend :** `GET /api/games/me` (authentifié)
+
+**Localisation backend :**
+```javascript
+// BackEndStartUpTycoon/src/routes/games.js
+router.get('/me', requireAuth, async (req, res) => {
+  const games = await Game.find({ userId: req.userId })
+    .sort({ createdAt: -1 });
+  res.json(games);
+});
+```
+
+**Caractéristiques :**
+- Liste de toutes les parties solo que **moi** j'ai terminées
+- Stockée côté serveur, liée à mon `user_id` (authentification Clerk)
+- Accessible uniquement si je suis authentifié
+- Contient : score, durée, clics, upgrades achetées, date
+
+**Pourquoi c'est du state serveur ?**
+Mon historique doit être accessible depuis n'importe quel appareil (PC, mobile). Si je me connecte depuis un autre navigateur, je dois retrouver toutes mes parties précédentes. La donnée vit sur le serveur, le client ne fait que la consulter.
+
+**Exemple de flux :**
+1. Alice joue 3 parties sur son PC (lundi, mardi, mercredi)
+2. Jeudi, Alice se connecte depuis son téléphone
+3. Elle accède à `/stats` → `GET /api/games/me`
+4. Elle voit ses 3 parties précédentes (synchronisation multi-device)
+
+---
+
+**Autres exemples de state serveur :**
+- Profil utilisateur (nom, avatar, email) - géré par Clerk
+- Statistiques globales du jeu (nombre de joueurs, parties jouées)
+- Configuration des upgrades (si gérée côté serveur pour éviter la triche)
+- Parties multijoueur en temps réel (TP14)
+
+---
+
+### 3️⃣ Pourquoi `signal` + `fetch` est un anti-pattern pour gérer le state serveur ?
+
+**Exemple concret : notre page `PublicStatsPage` actuelle**
+
+Voici le code actuel dans `src/pages/public-stats.page.ts` :
+
+```typescript
+export class PublicStatsPage implements OnInit {
+  stats = signal<PublicStats | null>(null);
+  loading = signal(true);
+  error = signal<string | null>(null);
+
+  async ngOnInit() {
+    try {
+      const response = await fetch('/public-stats.json');
+      if (!response.ok) {
+        throw new Error('Impossible de charger les statistiques');
+      }
+      const data = await response.json();
+      this.stats.set(data);
+    } catch (err) {
+      this.error.set(err instanceof Error ? err.message : 'Erreur inconnue');
+    } finally {
+      this.loading.set(false);
+    }
+  }
+}
+```
+
+**Problèmes de cette approche :**
+
+#### ❌ 1. Pas de cache
+
+À chaque fois qu'on navigue vers `/public-stats`, un nouveau `fetch` est déclenché, même si les données n'ont pas changé.
+
+**Impact :**
+- Gaspillage de bande passante
+- Latence inutile (200-500ms à chaque visite)
+- Expérience utilisateur dégradée
+
+**Exemple :**
+```
+User journey :
+1. Visite /public-stats → fetch ⏳
+2. Navigue vers /game
+3. Revient sur /public-stats → fetch again ⏳ (alors que les données n'ont pas changé)
+```
+
+#### ❌ 2. Pas de déduplication
+
+Si 2 composants sur la même page ont besoin des mêmes données, ils vont faire 2 `fetch` séparés.
+
+**Exemple concret :**
+```typescript
+// Composant NavbarComponent
+ngOnInit() {
+  fetch('/api/leaderboard').then(data => this.leaderboard.set(data));
+}
+
+// Page LeaderboardPage (même moment)
+ngOnInit() {
+  fetch('/api/leaderboard').then(data => this.leaderboard.set(data));
+}
+
+// Résultat : 2 requêtes HTTP identiques en parallèle 🔴
+```
+
+**Impact :**
+- Charge serveur doublée
+- Bande passante gaspillée
+- Incohérence potentielle si les réponses diffèrent (race condition)
+
+#### ❌ 3. Pas de gestion de la fraîcheur (staleness)
+
+Les données peuvent devenir obsolètes si un autre joueur ajoute un score, mais l'utilisateur ne le saura jamais.
+
+**Scénario :**
+```
+13h00 : Bob ouvre /leaderboard → fetch → Alice est #1 avec 40 000$
+13h05 : Charlie finit une partie avec 60 000$ (nouveau record)
+13h10 : Bob regarde toujours la page → voit toujours Alice #1 ❌
+```
+
+**Pourquoi ?**
+- Pas de mécanisme automatique pour refetch en arrière-plan
+- L'utilisateur doit manuellement refresh la page (mauvaise UX)
+
+#### ❌ 4. Gestion manuelle de l'état de chargement et d'erreur
+
+Chaque composant doit réimplémenter `loading`, `error`, `data`.
+
+**Code répétitif :**
+```typescript
+// Dans chaque composant...
+loading = signal(true);
+error = signal<string | null>(null);
+data = signal<any>(null);
+
+async ngOnInit() {
+  try {
+    const response = await fetch(...);
+    if (!response.ok) throw new Error('...');
+    const data = await response.json();
+    this.data.set(data);
+  } catch (err) {
+    this.error.set(err.message);
+  } finally {
+    this.loading.set(false);  // ⚠️ Facile d'oublier dans le catch !
+  }
+}
+```
+
+**Problèmes courants :**
+- Oublier de passer `loading` à `false` en cas d'erreur → loader infini
+- Oublier de gérer le cas réseau coupé
+- Code verbeux et boilerplate énorme
+
+#### ❌ 5. Pas de retry automatique
+
+Si le réseau coupe pendant 2 secondes pendant le fetch, l'utilisateur voit une erreur définitive.
+
+**Scénario :**
+```
+User : Clique sur /stats
+→ fetch démarre
+→ Réseau coupe 1 seconde (4G instable)
+→ fetch échoue
+→ Affiche : "❌ Erreur : Failed to fetch"
+→ L'utilisateur doit manuellement refresh
+```
+
+**Ce qui devrait se passer :**
+- Retry automatique (2-3 fois avec délai)
+- Si échec définitif, afficher l'erreur
+- UX résiliente
+
+#### ❌ 6. Pas d'optimistic updates
+
+Quand on enregistre un score, l'utilisateur doit attendre la réponse serveur avant de voir le changement dans l'UI.
+
+**Scénario :**
+```
+User : Finit une partie avec 50 000$
+→ POST /api/games (prend 500ms)
+→ Attente... ⏳
+→ Réponse reçue
+→ Invalidation manuelle du cache /stats et /leaderboard
+→ Nouveaux fetch (encore 300ms)
+→ Enfin, le score apparaît (800ms après la fin de partie) ❌
+```
+
+**Ce qui devrait se passer (optimistic update) :**
+```
+User : Finit une partie avec 50 000$
+→ UI mise à jour IMMÉDIATEMENT (0ms) ✅
+→ POST /api/games en arrière-plan
+→ Si succès : rien à faire (déjà affiché)
+→ Si échec : rollback + message d'erreur
+```
+
+#### ❌ 7. Pas d'invalidation de cache
+
+Si je soumets un nouveau score, comment dire aux pages `/leaderboard` et `/stats` que leurs données sont obsolètes ?
+
+**Problème :**
+```typescript
+// Page GamePage : fin de partie
+async submitScore() {
+  await fetch('/api/games', { method: 'POST', body: JSON.stringify({ score }) });
+  // ❓ Comment notifier LeaderboardPage et StatsPage de refetch ?
+}
+
+// Page LeaderboardPage : toujours en train d'afficher les anciennes données
+// Page StatsPage : idem
+```
+
+**Solutions possibles avec `signal + fetch` :**
+- ⚠️ Faire un nouveau `fetch` manuellement après chaque mutation → verbeux, facile d'oublier
+- ⚠️ Event bus / Subject RxJS pour notifier les autres composants → complexe, énorme boilerplate
+- ⚠️ Recharger toute la page (`window.location.reload()`) → UX horrible
+
+**Aucune de ces solutions n'est satisfaisante.**
+
+---
+
+### Conclusion
+
+> Ce pattern `signal + fetch` fonctionne pour des cas triviaux (une seule requête, pas de cache, pas de synchronisation), mais **ne scale pas** pour une vraie application. C'est pour ça qu'on utilise TanStack Query : pour gérer tout ça automatiquement.
+
+---
+
+### 4️⃣ Problèmes que `signal + fetch` ne résout PAS
+
+Récapitulatif des **3 problèmes majeurs identifiés** :
+
+#### **1. Cache et déduplication**
+
+**Problème :**
+```typescript
+// Composant A
+const leaderboard1 = signal(null);
+fetch('/api/leaderboard').then(data => leaderboard1.set(data));
+
+// Composant B (même page)
+const leaderboard2 = signal(null);
+fetch('/api/leaderboard').then(data => leaderboard2.set(data));
+
+// Résultat : 2 requêtes réseau identiques en parallèle 🔴
+```
+
+**Ce que TanStack Query fait :**
+```typescript
+// Composant A
+const { data } = useQuery({ queryKey: ['leaderboard'], queryFn: fetchLeaderboard });
+
+// Composant B
+const { data } = useQuery({ queryKey: ['leaderboard'], queryFn: fetchLeaderboard });
+
+// Résultat : 1 seule requête, les deux composants partagent le même cache ✅
+```
+
+**Mécanisme :**
+- TanStack Query utilise la `queryKey` comme identifiant unique
+- Si 2 composants demandent la même `queryKey`, un seul fetch est déclenché
+- Les deux composants reçoivent les données du cache partagé
+- Économie de bande passante + cohérence garantie
+
+---
+
+#### **2. Gestion de la fraîcheur (staleness) et refetch automatique**
+
+**Problème :**
+Avec `signal + fetch`, les données sont **figées** après le premier chargement.
+
+Si Alice ajoute un score au leaderboard pendant que Bob consulte la page, Bob ne verra jamais le nouveau score **sauf s'il refresh manuellement la page**.
+
+**Ce que TanStack Query fait :**
+```typescript
+useQuery({
+  queryKey: ['leaderboard'],
+  queryFn: fetchLeaderboard,
+  staleTime: 10_000,  // Données considérées fraîches pendant 10s
+  refetchInterval: 30_000,  // Refetch automatique toutes les 30s
+  refetchOnWindowFocus: true,  // Refetch quand l'utilisateur revient sur l'onglet
+  refetchOnReconnect: true,  // Refetch après une déconnexion réseau
+});
+```
+
+**Résultat :**
+- Les données sont **automatiquement mises à jour** sans intervention de l'utilisateur
+- Si Bob laisse l'onglet ouvert, il verra le score d'Alice apparaître dans les 30 secondes
+- Si Bob revient sur l'onglet après avoir consulté ses emails, refetch automatique
+
+**Gestion de la fraîcheur :**
+```
+staleTime = 10s → Pendant 10s, les données sont "fraîches", pas de refetch
+Après 10s → Données "stale" (obsolètes), refetch au prochain événement
+  - refetchOnWindowFocus
+  - refetchOnMount
+  - refetchInterval
+```
+
+---
+
+#### **3. Invalidation de cache et synchronisation entre composants**
+
+**Problème :**
+Quand je soumets un nouveau score :
+1. Je `POST /api/games` → succès
+2. La page `/stats` affiche toujours l'ancien historique (pas de nouveau score)
+3. La page `/leaderboard` affiche toujours l'ancien top 20 (pas de mise à jour)
+
+**Comment résoudre ça avec `signal + fetch` ?**
+- ⚠️ Option 1 : Faire un nouveau `fetch` manuellement après chaque mutation → verbeux, facile d'oublier
+- ⚠️ Option 2 : Event bus / Subject RxJS pour notifier les autres composants → complexe, boilerplate énorme
+- ⚠️ Option 3 : Recharger la page (`window.location.reload()`) → UX horrible
+
+**Ce que TanStack Query fait :**
+```typescript
+const submitGameMutation = useMutation({
+  mutationFn: (gameData) => fetch('/api/games', { 
+    method: 'POST', 
+    body: JSON.stringify(gameData),
+    headers: { 'Content-Type': 'application/json' }
+  }),
+  onSuccess: () => {
+    // Invalider le cache de toutes les queries concernées
+    queryClient.invalidateQueries({ queryKey: ['leaderboard'] });
+    queryClient.invalidateQueries({ queryKey: ['games', 'me'] });
+  },
+});
+```
+
+**Résultat :**
+- **Tous les composants qui affichent le leaderboard ou l'historique sont automatiquement refetch** après la mutation
+- Synchronisation zéro effort
+- UI toujours à jour
+
+**Workflow :**
+```
+1. User finit une partie
+2. submitGameMutation.mutate({ score: 50000, duration: 300, clicks: 1200 })
+3. POST /api/games → succès
+4. onSuccess() → invalidateQueries(['leaderboard']) → tous les useQuery(['leaderboard']) refetch
+5. onSuccess() → invalidateQueries(['games', 'me']) → tous les useQuery(['games', 'me']) refetch
+6. UI mise à jour automatiquement dans tous les composants
+```
+
+---
+
+### 📊 Résumé : Signal vs TanStack Query
+
+| Critère | `signal + fetch` | TanStack Query |
+|---------|------------------|----------------|
+| **Cache** | ❌ Aucun | ✅ Automatique (par `queryKey`) |
+| **Déduplication** | ❌ Requêtes multiples | ✅ 1 seule requête par `queryKey` |
+| **Refetch automatique** | ❌ Manuel uniquement | ✅ `staleTime`, `refetchInterval`, `refetchOnWindowFocus` |
+| **Loading state** | ⚠️ Manuel (`loading` signal) | ✅ `isLoading`, `isFetching` |
+| **Error state** | ⚠️ Manuel (`error` signal) | ✅ `isError`, `error` |
+| **Retry** | ❌ Aucun | ✅ Automatique (configurable, 3 tentatives par défaut) |
+| **Invalidation** | ❌ Aucune coordination | ✅ `invalidateQueries()` |
+| **Optimistic updates** | ❌ Pas de support | ✅ `onMutate` avec rollback automatique |
+| **DevTools** | ❌ Aucun | ✅ React Query DevTools / TanStack Query DevTools |
+| **Boilerplate** | ⚠️ Répétitif (loading, error, try/catch partout) | ✅ Minimal (déclaratif) |
+| **Coordination multi-composants** | ❌ Event bus manuel | ✅ Cache partagé automatique |
+| **Gestion de la fraîcheur** | ❌ Données figées | ✅ Staleness configurable |
+| **Background refetch** | ❌ Impossible | ✅ Automatique |
+
+---
+
+### 🎯 Conclusion
+
+**TanStack Query n'est pas "un fetch plus pratique".**
+
+C'est un **gestionnaire de state serveur** qui résout des problèmes architecturaux fondamentaux :
+
+1. **Séparation des responsabilités** :
+   - `GameStore` gère le state client (money, clicks, timer)
+   - TanStack Query gère le state serveur (leaderboard, historique)
+
+2. **Synchronisation automatique** :
+   - Les données serveur restent fraîches sans intervention manuelle
+   - Refetch en arrière-plan, au focus, après reconnexion
+
+3. **Performance** :
+   - Cache intelligent évite les requêtes inutiles
+   - Déduplication automatique
+   - Refetch optimisé (seulement si stale)
+
+4. **UX** :
+   - Optimistic updates pour une expérience instantanée
+   - Retry automatique en cas de problème réseau
+   - États de chargement unifiés (loading, error, success)
+
+5. **Maintenabilité** :
+   - Code déclaratif (moins de boilerplate)
+   - Centralisation de la logique de fetch
+   - DevTools pour debugger le cache
+
+> **Si votre application consomme des API, TanStack Query (ou équivalent) n'est pas un luxe, c'est une nécessité.**
+
+---
+
+**Fin du livrable Partie 3.3**
 ```javascript
 clerk.session.getToken()  // Récupère le token depuis la mémoire
 ```

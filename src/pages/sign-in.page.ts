@@ -12,6 +12,7 @@ import { ClerkService } from '../services/clerk.service';
         
         <button (click)="login()" class="sign-in-btn">Se connecter</button>
         <button (click)="logout()" class="sign-out-btn">Se déconnecter</button>
+        <button (click)="debugClerk()" class="debug-btn">🔍 Debug Clerk (TP13 P2)</button>
       </div>
     </div>
   `,
@@ -76,6 +77,17 @@ import { ClerkService } from '../services/clerk.service';
 
     .sign-out-btn:hover {
       background: #e0e0e0;
+
+    .debug-btn {
+      background: #ff9800;
+      color: white;
+      font-size: 0.9rem;
+      margin-top: 20px;
+    }
+
+    .debug-btn:hover {
+      background: #f57c00;
+    }
     }
   `]
 })
@@ -88,5 +100,28 @@ export class SignInPage {
 
   logout() {
     this.clerkService.signOut();
+  }
+
+  async debugClerk() {
+    console.log('=== 🔍 DEBUG CLERK ===');
+    
+    // 1. Informations utilisateur
+    console.log('👤 User:', this.clerkService.getUser());
+    
+    // 2. JWT Token
+    const token = await this.clerkService.getToken();
+    console.log('🎫 JWT Token:', token);
+    
+    // 3. Cookies
+    console.log('🍪 document.cookie:', document.cookie);
+    console.log('➡️ Les cookies HttpOnly ne sont PAS visibles ici');
+    
+    // 4. Instructions
+    console.log('\n📋 INSTRUCTIONS:');
+    console.log('1. Ouvrir DevTools → Application → Cookies');
+    console.log('2. Copier le token JWT ci-dessus sur https://jwt.io');
+    console.log('3. Observer les requêtes Network');
+    
+    alert('Voir la console pour les infos de debug !');
   }
 }

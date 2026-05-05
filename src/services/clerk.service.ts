@@ -53,4 +53,9 @@ export class ClerkService {
   isSignedIn() {
     return this.user() !== null;
   }
+
+  async getToken() {
+    if (!this.isLoaded) return null;
+    return await this.clerk.session?.getToken();
+  }
 }

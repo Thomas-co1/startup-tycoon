@@ -28,6 +28,7 @@ import { UserButtonComponent } from './user-button.component';
         <ul class="navbar-menu">
           <li><a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">Game</a></li>
           <li><a routerLink="/shop" routerLinkActive="active">Shop</a></li>
+          <li><a routerLink="/leaderboard" routerLinkActive="active">Leaderboard</a></li>
           <li><a routerLink="/stats" routerLinkActive="active">Stats</a></li>
           <li><a routerLink="/settings" routerLinkActive="active">Settings</a></li>
         </ul>
